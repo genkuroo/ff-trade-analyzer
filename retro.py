@@ -47,14 +47,30 @@ to cover the hole the trade created. So the counterfactual hands back the
 traded-away player *and* keeps the replacement signed to replace him, when in
 reality the manager only ever had one of the two.
 
-Roster size is what makes this a real distortion rather than a quibble: rosters
-are capped, so a player given back in the counterfactual should be displacing a
-waiver claim, not sitting alongside it.
+Roster size is what makes this a real distortion rather than a quibble, and it
+is also the handle for fixing it: rosters are capped, so a player handed back in
+the counterfactual must be *displacing* a waiver claim, not sitting alongside
+it. So whenever giving the traded-away players back would leave the roster
+larger than it really was, the most recent post-trade free-agent pickups are
+dropped until the size matches -- on the reasoning that those claims were only
+possible because the roster had the room.
 
-The effect is systematic and it runs one way: the counterfactual roster comes
-out slightly too *strong*, so its best lineup scores slightly too high, so the
-measured swing is slightly too *low*. Every trade therefore looks a little less
-valuable than it was. It is a ceiling on the pre-trade roster, not a floor.
+That is a heuristic: some of those pickups had nothing to do with the trade.
+``displaced`` on each week's row says how many were dropped, so its influence is
+visible rather than implied.
+
+Worth knowing how much it actually matters, because the answer is "less than you
+would think". Across the demo season the correction fires a dozen times and
+moves the measured swing by **0.0 points**. The reason is structural: only the
+slots a trade vacated get refilled, and that slot goes to the player who was
+traded away in 16 of 28 cases and to an existing bench player in the other 12 --
+almost never to the recent waiver claim being displaced. A design choice made
+for an unrelated reason (refilling only vacated slots, so the manager's other
+lineup decisions are preserved) turns out to make the whole model largely immune
+to this contamination.
+
+So the correction is kept because it is right in principle and costs nothing,
+not because it rescues the numbers. The bias it addresses is real but small.
 
 (The opposite error -- a counterfactual so thin that a lineup slot cannot be
 filled at all, scoring zero and flattering the trade -- is possible in shallow
@@ -121,6 +137,28 @@ def started_in_week(conn, league_id: str, roster_id: int, week: int) -> dict:
     }
 
 
+def post_trade_pickups(conn, league_id: str, roster_id: int, after_ms: int) -> list:
+    """Players this roster added off waivers or free agency after a trade.
+
+    Most recent first, because the newest claim is the one most likely to have
+    been made *because* of the trade, and so the first that would not have
+    happened without it.
+    """
+    return [
+        row["player_id"]
+        for row in conn.execute(
+            """SELECT tp.player_id
+                 FROM transaction_players tp
+                 JOIN transactions t ON t.txn_id = tp.txn_id
+                WHERE t.league_id = ? AND t.type IN ('free_agent', 'waiver')
+                  AND t.status = 'complete' AND t.created_ms > ?
+                  AND tp.roster_id = ? AND tp.direction = 'add'
+                ORDER BY t.created_ms DESC""",
+            (league_id, after_ms, roster_id),
+        )
+    ]
+
+
 def _positions(conn) -> dict:
     return {
         row["player_id"]: row["position"]
@@ -156,6 +194,9 @@ def retrospective(conn, league_id: str, txn_id: str) -> dict:
     results = {}
     for roster_id, side in sides.items():
         weekly = []
+        pickups = post_trade_pickups(
+            conn, league_id, roster_id, txn["created_ms"] or 0
+        )
         for week in weeks:
             scores = week_points(conn, league_id, week)
             real = roster_in_week(conn, league_id, roster_id, week)
@@ -167,6 +208,20 @@ def retrospective(conn, league_id: str, txn_id: str) -> dict:
             hypothetical |= {
                 pid for pid in side.get("players_out", []) if pid in scores
             }
+
+            # Keep the roster the size it really was. A player handed back must
+            # displace a waiver claim the manager could not then have afforded
+            # the room to make -- otherwise the counterfactual gets both the
+            # traded-away player and the replacement signed to replace him.
+            displaced = []
+            surplus = len(hypothetical) - len(real)
+            for pid in pickups:
+                if surplus <= 0:
+                    break
+                if pid in hypothetical:
+                    hypothetical.discard(pid)
+                    displaced.append(pid)
+                    surplus -= 1
 
             actual_best = _best(real, scores, positions, slots)
             counterfactual_best = _best(hypothetical, scores, positions, slots)
@@ -188,6 +243,11 @@ def retrospective(conn, league_id: str, txn_id: str) -> dict:
                     "roster_swing": round(actual_best - counterfactual_best, 2),
                     "lineup_efficiency": round(actual_scored / actual_best, 4)
                     if actual_best else None,
+                    "displaced": len(displaced),
+                    # Non-zero means the roster really was over capacity and
+                    # some claims had to be rolled back; still non-zero after
+                    # the loop means there were not enough pickups to displace.
+                    "size_gap": max(surplus, 0),
                 }
             )
 

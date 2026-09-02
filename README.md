@@ -169,14 +169,21 @@ They can disagree sharply, and the disagreement is informative: acquiring
 someone who raises your ceiling but never leaves your bench is a real upgrade
 worth zero actual points.
 
-Known limit, stated on the page rather than buried. The replay keeps every
-waiver pickup the manager really made — including ones made to cover the hole a
-trade created. So it hands the traded-away player back *and* keeps the
-replacement signed to replace him, when only one of the two ever existed.
-Rosters are capped, so that extra body should have been displacing a waiver
-claim. The bias is systematic and one-directional: the pre-trade roster comes
-out slightly too strong, so every trade reads a little **less** valuable than it
-really was.
+**Roster-size correction.** The replay is built from the roster as it stands
+now, which already contains every waiver pickup made since the trade — including
+ones made to cover the hole the trade created. Left alone it would hand the
+traded-away player back *and* keep the replacement signed to replace him, when
+only one of the two ever existed. Rosters are capped, so whenever the
+counterfactual comes out oversized, the most recent post-trade pickups are
+dropped until the size matches.
+
+How much this matters, measured rather than assumed: across the demo season it
+fires a dozen times and moves the answer by **0.0 points**. Only the slots a
+trade vacated get refilled, and that slot goes to the returned player in 16 of
+28 cases and an existing bench player in the rest — almost never to the waiver
+claim being displaced. A design choice made for a different reason turns out to
+make the model largely immune to the bias. The correction stays because it is
+right and free, not because it rescues anything.
 
 ### Valuing draft picks
 

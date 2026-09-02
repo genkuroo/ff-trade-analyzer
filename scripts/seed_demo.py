@@ -61,6 +61,11 @@ WEEKS_PLAYED = 10
 # was actually scored.
 LINEUP_ERROR_RATE = 1 / 6
 
+# Chance each team makes a waiver claim in a given week. Roughly a claim every
+# three weeks per manager, which is unremarkable for a real league and is what
+# gives the roster-size correction something to correct.
+WAIVER_RATE = 0.30
+
 # Each trade is written to exercise a different shape the grader must handle.
 TRADES = [
     {
@@ -102,8 +107,8 @@ def main() -> None:
     _write_league(conn, config_key)
     pool = _pool(conn, config_key, asof)
     rosters = _draft(conn, pool)
-    _write_trades(conn, rosters)
-    _write_scoring(conn, rosters)
+    schedule = _write_trades(conn, rosters)
+    _simulate_season(conn, rosters, pool, schedule)
 
     conn.commit()
     trades = conn.execute(
@@ -199,30 +204,84 @@ def _weekly_points(value: int, position: str, rng: random.Random) -> float:
     return max(0.0, round(score, 2))
 
 
-def _write_scoring(conn, rosters: dict) -> None:
-    """Generate a season of weekly results, and set imperfect lineups.
+def _simulate_season(conn, rosters: dict, pool: dict, schedule: dict) -> None:
+    """Play the season week by week, applying trades and waiver claims in order.
 
-    Starters are chosen with the same solver the grader uses, then a share of
-    them are deliberately swapped for a bench player at the same position --
-    otherwise every manager would be perfectly efficient and the difference
-    between "what they scored" and "the best their roster could score" would
-    collapse to zero, hiding the distinction the grader exists to make.
+    Waiver activity matters here for one specific reason: the retrospective
+    grader corrects for roster size by rolling back pickups a manager made
+    *after* a trade, on the reasoning that they only had room for the claim
+    because they had traded someone away. Without churn in the demo, that whole
+    code path would never run.
+
+    Starters are chosen with the same solver the grader uses, then a share are
+    deliberately swapped for a bench player at the same position -- otherwise
+    every manager is perfectly efficient and the gap between "what they scored"
+    and "the best their roster could score" collapses to zero, hiding the
+    distinction the grader exists to make.
     """
-    import sys, os
+    import os
+    import sys
+
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     import analytics
 
     rng = random.Random(SEED + 7)
     slots = analytics.starting_slots(ROSTER_POSITIONS)
     ids = sorted(rosters)
+    snapshot = ingest.today()
+    base_ms = int(time.time() * 1000) - WEEKS_PLAYED * 86_400_000
+
+    drafted = {p["player_id"] for roster in rosters.values() for p in roster}
+    free_agents = [
+        p for players in pool.values() for p in players
+        if p["player_id"] not in drafted
+    ]
+    # Best available first, so a claim can be a genuine hit rather than
+    # guaranteed bench fodder. A waiver pickup that never reaches a lineup
+    # cannot exercise the grader's roster-size correction at all, which is the
+    # thing this churn exists to test.
+    free_agents.sort(key=lambda p: p["value"], reverse=True)
+    claims = 0
 
     for week in range(1, WEEKS_PLAYED + 1):
+        # 1. Trades land first, at the week they were made.
+        for player, sender, receiver in schedule.get(week, []):
+            rosters[sender].remove(player)
+            rosters[receiver].append(player)
+
+        # 2. Then waiver claims, which is why they sort after the trade.
+        for roster_id in ids:
+            if rng.random() > WAIVER_RATE or not free_agents:
+                continue
+            # Most claims are depth; some are the best thing on the wire.
+            add = free_agents.pop(0) if rng.random() < 0.4 else free_agents.pop(
+                rng.randrange(min(len(free_agents), 40))
+            )
+            worst = min(rosters[roster_id], key=lambda p: p["value"])
+            rosters[roster_id].remove(worst)
+            rosters[roster_id].append(add)
+            claims += 1
+            txn_id = f"demo-fa-{week}-{roster_id}"
+            conn.execute(
+                """INSERT OR REPLACE INTO transactions
+                   (txn_id, league_id, week, type, status, created_ms, payload)
+                   VALUES (?, ?, ?, 'free_agent', 'complete', ?, '{}')""",
+                (txn_id, LEAGUE_ID, week, base_ms + week * 86_400_000 + roster_id),
+            )
+            for player, direction in ((add, "add"), (worst, "drop")):
+                conn.execute(
+                    """INSERT OR REPLACE INTO transaction_players
+                       (txn_id, league_id, player_id, roster_id, direction)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (txn_id, LEAGUE_ID, player["player_id"], roster_id, direction),
+                )
+
+        # 3. Play the week.
         scores = {}
-        for roster_id, players in rosters.items():
+        for players in rosters.values():
             for p in players:
                 scores.setdefault(
-                    p["player_id"],
-                    _weekly_points(p["value"], p["position"], rng),
+                    p["player_id"], _weekly_points(p["value"], p["position"], rng)
                 )
 
         totals = {}
@@ -235,7 +294,6 @@ def _write_scoring(conn, rosters: dict) -> None:
             chosen, _ = analytics.best_lineup(candidates, slots)
             started = {c["player_id"] for c in chosen}
 
-            # Introduce realistic lineup mistakes.
             for pick in list(started):
                 if rng.random() >= LINEUP_ERROR_RATE:
                     continue
@@ -248,8 +306,7 @@ def _write_scoring(conn, rosters: dict) -> None:
                     started.discard(pick)
                     started.add(rng.choice(bench))
 
-            total = round(sum(scores[pid] for pid in started), 2)
-            totals[roster_id] = total
+            totals[roster_id] = round(sum(scores[pid] for pid in started), 2)
             for p in players:
                 conn.execute(
                     """INSERT OR REPLACE INTO player_weeks
@@ -259,7 +316,6 @@ def _write_scoring(conn, rosters: dict) -> None:
                      scores[p["player_id"]], int(p["player_id"] in started)),
                 )
 
-        # Pair teams off differently each week so head-to-head results vary.
         order = ids[:]
         rng.shuffle(order)
         for matchup_id, i in enumerate(range(0, len(order), 2), start=1):
@@ -270,7 +326,19 @@ def _write_scoring(conn, rosters: dict) -> None:
                        VALUES (?, ?, ?, ?, ?)""",
                     (LEAGUE_ID, week, roster_id, matchup_id, totals[roster_id]),
                 )
-    print(f"  {WEEKS_PLAYED} weeks of scoring with imperfect lineups")
+
+    # Final roster state, so the instant grader and the dashboard agree with
+    # where everyone ended up.
+    conn.execute("DELETE FROM roster_slots WHERE league_id = ?", (LEAGUE_ID,))
+    for roster_id, players in rosters.items():
+        for p in players:
+            conn.execute(
+                """INSERT OR REPLACE INTO roster_slots
+                   (league_id, snapshot_date, roster_id, player_id, slot)
+                   VALUES (?, ?, ?, ?, 'active')""",
+                (LEAGUE_ID, snapshot, roster_id, p["player_id"]),
+            )
+    print(f"  {WEEKS_PLAYED} weeks played, {claims} waiver claims, imperfect lineups")
 
 
 def _pick_from(roster: list, spec: str) -> dict:
@@ -283,7 +351,15 @@ def _pick_from(roster: list, spec: str) -> dict:
     return ranked[rank - 1]
 
 
-def _write_trades(conn, rosters: dict) -> None:
+def _write_trades(conn, rosters: dict) -> dict:
+    """Write the trade records and return {week: [(player, from, to), ...]}.
+
+    Rosters are deliberately not mutated here. The season loop applies trades
+    and waiver claims together in week order, so a pickup made *after* a trade
+    really is recorded after it -- which is what the retrospective grader's
+    roster-size correction depends on.
+    """
+    schedule: dict[int, list] = {}
     now_ms = int(time.time() * 1000)
     for index, trade in enumerate(TRADES):
         # Pair up teams from opposite ends of the standings so the rebuild
@@ -304,6 +380,7 @@ def _write_trades(conn, rosters: dict) -> None:
             moved.append((_pick_from(rosters[a], spec), a, b))
         for spec in trade.get("b_gives", []):
             moved.append((_pick_from(rosters[b], spec), b, a))
+        schedule.setdefault(trade["week"], []).extend(moved)
 
         for player, sender, receiver in moved:
             conn.execute(
@@ -317,15 +394,6 @@ def _write_trades(conn, rosters: dict) -> None:
                    (txn_id, league_id, player_id, roster_id, direction)
                    VALUES (?, ?, ?, ?, 'add')""",
                 (txn_id, LEAGUE_ID, player["player_id"], receiver),
-            )
-            # Move the player on the roster too, so the "after" state the
-            # grader reads is consistent with the transaction it is grading.
-            rosters[sender].remove(player)
-            rosters[receiver].append(player)
-            conn.execute(
-                """UPDATE roster_slots SET roster_id = ?
-                    WHERE league_id = ? AND player_id = ?""",
-                (receiver, LEAGUE_ID, player["player_id"]),
             )
 
         for season, rnd in trade.get("b_picks", []):
@@ -344,6 +412,7 @@ def _write_trades(conn, rosters: dict) -> None:
                 (txn_id, LEAGUE_ID, b, a, trade["b_faab"]),
             )
         print(f"  week {trade['week']}: {trade['note']}")
+    return schedule
 
 
 if __name__ == "__main__":
