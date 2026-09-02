@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% import "_grade.html" as g %}
+{% set page = 'trades' %}
+{% block title %}Trades — {{ summary.name }}{% endblock %}
+
+{% block body %}
+  <h2>Completed trades</h2>
+  <p class="sub" style="margin-bottom:12px">
+    Each trade gets two grades, kept separate on purpose. <strong>Value</strong> is
+    what the market says you gained or gave up. <strong>Fit</strong> is how much of
+    that value actually reached your starting lineup. In a dynasty league they
+    routinely disagree, and that disagreement is the interesting part — a rebuild
+    trade <em>should</em> win on value and lose on fit.
+  </p>
+
+  {% if trades %}
+    {% for t in trades %}
+      <div class="card">
+        <div style="padding:10px 16px;border-bottom:1px solid var(--gridline)">
+          <span class="pill">week {{ t.week }}</span>
+          <span class="slot" style="margin-left:8px">graded at values from {{ t.asof }}</span>
+        </div>
+        <div class="sides">
+          {% for s in t.sides.values() %}{{ g.side(s) }}{% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="card">
+      <div class="empty">
+        <p style="margin-top:0"><strong>No trades in this league yet.</strong></p>
+        <p>
+          Nothing to grade until someone pulls the trigger. In the meantime the
+          <a href="{{ url_for('machine', league_id=league_id) }}">trade machine</a>
+          grades a hypothetical against the same live values, so you can check a
+          deal before you offer it.
+        </p>
+        <p style="margin-bottom:0">
+          From a terminal: <code>python cli.py propose --give "Player A" --get "Player B"</code>
+        </p>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block foot %} Retrospective grading — how each trade actually worked out — arrives in phase 3.{% endblock %}

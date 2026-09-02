@@ -46,15 +46,66 @@ between judging a decision and judging with hindsight.
 | Phase | What | State |
 |---|---|---|
 | 1 | Sleeper + FantasyCalc ingest into SQLite | done |
-| 2 | Instant trade grade (value, roster fit, consolidation) | next |
-| 3 | Retrospective grade (counterfactual lineup replay) | |
+| 2 | Instant trade grade (value, roster fit, consolidation) | done |
+| 3 | Retrospective grade (counterfactual lineup replay) | next |
 | 4 | Power rankings with luck adjustment | |
-| 5 | Flask dashboard | partial — rankings + moves |
+| 5 | Flask dashboard | partial — rankings, trades, machine |
 | 6 | Discord slash commands in `sleeper-discord-bot` | |
 
 Phase 5 landed early in skeleton form because the app is self-hosted: there has
 to be something for the Pi to serve. It currently shows power rankings and
 recent moves; the trade pages arrive with phases 2 and 3.
+
+### The two grades
+
+Every trade gets **two** grades, kept separate rather than blended into one
+composite letter:
+
+- **Value** — market value received minus market value given away.
+- **Fit** — how much of that value actually reached the starting lineup.
+
+They are separate because in a dynasty league they legitimately disagree, and
+the disagreement is the whole story. A rebuilding team that trades a 29-year-old
+star for two future firsts *should* win on value and lose on fit; that is a good
+trade, not a C. Collapsing both into one number would call it a wash and say
+nothing.
+
+Fit also does the work that trade graders usually fake with an invented
+"consolidation premium". Two bench players contribute nothing to a starting
+lineup, so a 2-for-1 that turns depth into a starter shows up as a fit gain on
+its own — no magic multiplier required.
+
+```
+The Waiver Wire
+  + Carnell Tate      3,817
+  - DJ Moore          2,466
+  - Travis Etienne    3,227
+  VALUE F  -1,876 (-33.0%)    FIT A-  +590 (+10.4%)
+  Paid above market to improve the lineup now — defensible for a
+  contender, expensive for anyone else.
+```
+
+### Valuing draft picks
+
+This is the awkward join in the project. Sleeper records a traded pick as season
++ round + whose pick it originally was, and never its slot, because the slot does
+not exist yet. FantasyCalc prices picks *by* slot — a 2027 early first is worth
+nearly double a late one. So the slot has to be projected from how good the
+original owner is, worst team picking first, with three levels of confidence:
+an exact slot when the draft order is known, an early/mid/late tier projected
+from standings, or the round's blended value when the market prices no tiers
+that far out. The grader reports which one it used rather than presenting a
+projection as a fact.
+
+FAAB is priced off the league's own lineups: a full budget is worth roughly the
+weakest player anyone is actually starting, because that is what the money is
+for.
+
+### The trade machine
+
+`/league/<id>/machine` grades a hypothetical before you offer it. Everything
+lives in the query string and nothing is written, so a graded trade is just a
+link you can paste into the league chat.
 
 ### Power rankings
 
@@ -75,6 +126,23 @@ cp config.example.json config.json     # then add your league id
 .venv/bin/python cli.py discover <your-sleeper-username>   # finds league ids
 .venv/bin/python cli.py sync
 .venv/bin/python cli.py status
+
+.venv/bin/python cli.py trades                          # grade real trades
+.venv/bin/python cli.py propose --give "Puka Nacua" --get "Ja'Marr Chase"
+```
+
+### Seeing it work without any trades
+
+A first-year league has no trade history, and its picks and FAAB have never
+moved — so three of the grader's paths have nothing real to run against. The
+seeder builds a synthetic league with real players and real market values, and
+four trades chosen to exercise every shape: star-for-star, 2-for-1
+consolidation, a rebuild for future picks, and a FAAB sweetener.
+
+```bash
+FFTA_DB=demo.db .venv/bin/python scripts/seed_demo.py
+FFTA_DB=demo.db .venv/bin/python cli.py trades
+FFTA_DB=demo.db .venv/bin/python app.py     # dashboard on :5003
 ```
 
 `sync --history` walks a dynasty league backwards through `previous_league_id`
@@ -87,12 +155,15 @@ league, so that chain is the only route to old trade history.
 db.py           schema + connection; player_weeks is the table that matters
 ingest.py       idempotent sync of a league end to end
 analytics.py    read-only computations, incl. the lineup solver
+grading.py      instant trade grading: value, fit, picks, FAAB
 app.py          Flask UI (never calls an API — reads the database only)
-cli.py          sync / values / discover / status
+cli.py          sync / values / trades / propose / discover / status
 config.py       league list, from FFTA_LEAGUES or config.json
 sources/
   sleeper.py    keyless Sleeper client, disk-caches the 5 MB player catalog
   values.py     FantasyCalc values + draft-pick label parsing
+scripts/
+  seed_demo.py  synthetic league + trades, for demoing the grader
 ```
 
 ## Deployment

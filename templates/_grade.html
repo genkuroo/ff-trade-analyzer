@@ -1,0 +1,42 @@
+{# Renders one side of a graded trade. Shared by the trades list and the
+   machine, so a grade always looks the same wherever it appears. #}
+{% macro band(letter) %}{% if letter[0] in 'AB' %}g-good{% elif letter[0] == 'C' %}g-mid{% else %}g-bad{% endif %}{% endmacro %}
+
+{% macro side(s) %}
+<div class="side">
+  <h3>{{ s.team }}</h3>
+  {% for a in s.assets_in %}
+    <div class="asset">
+      <span class="adds">+ {{ a.label }}{% if a.detail %} <span class="slot">{{ a.detail }}</span>{% endif %}</span>
+      <span class="num">{{ '{:,}'.format(a.value) }}</span>
+    </div>
+    {% if a.kind != 'player' %}<div class="basis">{{ a.basis }}</div>{% endif %}
+  {% endfor %}
+  {% for a in s.assets_out %}
+    <div class="asset">
+      <span class="drops">− {{ a.label }}{% if a.detail %} <span class="slot">{{ a.detail }}</span>{% endif %}</span>
+      <span class="num">{{ '{:,}'.format(a.value) }}</span>
+    </div>
+    {% if a.kind != 'player' %}<div class="basis">{{ a.basis }}</div>{% endif %}
+  {% endfor %}
+
+  <div class="grades">
+    <span class="grade {{ band(s.value_grade) }}">{{ s.value_grade }}</span>
+    <span class="slot">value</span>
+    <span class="{{ 'pos' if s.value_delta > 0 else 'neg' }}">
+      {{ '{:+,}'.format(s.value_delta) }} ({{ '{:+.1%}'.format(s.value_pct) }})
+    </span>
+  </div>
+  <div class="grades">
+    <span class="grade {{ band(s.fit_grade) }}">{{ s.fit_grade }}</span>
+    <span class="slot">fit</span>
+    <span class="{{ 'pos' if s.lineup_delta > 0 else 'neg' }}">
+      {{ '{:+,.0f}'.format(s.lineup_delta) }} lineup ({{ '{:+.1%}'.format(s.lineup_pct) }})
+    </span>
+  </div>
+  {% if s.age_in and s.age_out %}
+    <div class="slot">avg age in {{ s.age_in }} · out {{ s.age_out }}</div>
+  {% endif %}
+  <p class="verdict">{{ s.verdict }}</p>
+</div>
+{% endmacro %}

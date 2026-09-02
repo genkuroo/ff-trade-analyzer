@@ -4,6 +4,8 @@
     python cli.py sync --history       ...and every prior season of each
     python cli.py sync --no-values     league data only (the frequent poll)
     python cli.py values               snapshot market values only (daily)
+    python cli.py trades               grade every completed trade
+    python cli.py propose --give X --get Y   grade a hypothetical trade
     python cli.py discover <username>  list a Sleeper user's leagues + ids
     python cli.py status               what is in the database right now
 
@@ -18,8 +20,10 @@ import logging
 import os
 import sys
 
+import analytics
 import config
 import db
+import grading
 import ingest
 from sources import sleeper
 
@@ -67,6 +71,80 @@ def cmd_values(args) -> None:
         shapes.append(ingest.league_shape(sleeper.league(entry["id"])))
     total = ingest.sync_all_values(conn, shapes)
     print(f"snapshotted {total} values across {len(shapes)} league(s)")
+    conn.close()
+
+
+def _only_league(conn, requested: str | None) -> str:
+    """Pick the league to operate on: the one named, or the only one synced."""
+    leagues = analytics.all_leagues(conn)
+    if not leagues:
+        sys.exit("No leagues synced yet — run: python cli.py sync")
+    if requested:
+        for league in leagues:
+            if requested in (league["league_id"], league["name"]):
+                return league["league_id"]
+        sys.exit(f"No synced league matches {requested!r}.")
+    if len(leagues) > 1:
+        names = ", ".join(f"{l['name']} ({l['league_id']})" for l in leagues)
+        sys.exit(f"Several leagues synced — pass --league. One of: {names}")
+    return leagues[0]["league_id"]
+
+
+def _print_grade(result: dict, header: str) -> None:
+    print(f"\n{header}")
+    print(f"values as of {result['asof']}")
+    for side in result["sides"].values():
+        print(f"\n  {side['team']}")
+        for asset in side["assets_in"]:
+            print(f"    + {asset['label']:<26} {asset['value']:>7,}  {asset['basis']}")
+        for asset in side["assets_out"]:
+            print(f"    - {asset['label']:<26} {asset['value']:>7,}  {asset['basis']}")
+        print(
+            f"    VALUE {side['value_grade']:<3} {side['value_delta']:+8,} "
+            f"({side['value_pct']:+.1%})    "
+            f"FIT {side['fit_grade']:<3} {side['lineup_delta']:+8,.0f} "
+            f"({side['lineup_pct']:+.1%})"
+        )
+        print(f"    {side['verdict']}")
+
+
+def cmd_trades(args) -> None:
+    conn = db.init_db()
+    league_id = _only_league(conn, args.league)
+    rows = conn.execute(
+        """SELECT txn_id, week, created_ms FROM transactions
+            WHERE league_id = ? AND type = 'trade' AND status = 'complete'
+            ORDER BY created_ms""",
+        (league_id,),
+    ).fetchall()
+    if not rows:
+        print(
+            "No completed trades in this league yet.\n"
+            "Try a hypothetical instead:\n"
+            '  python cli.py propose --give "Player A" --get "Player B"'
+        )
+        conn.close()
+        return
+    for row in rows:
+        result = grading.grade(conn, league_id, grading.trade_sides(conn, row["txn_id"]))
+        _print_grade(result, f"=== week {row['week']} trade {row['txn_id']} ===")
+    conn.close()
+
+
+def cmd_propose(args) -> None:
+    conn = db.init_db()
+    league_id = _only_league(conn, args.league)
+    try:
+        sides = grading.build_proposal(
+            conn, league_id, give=args.give, get=args.get, from_team=getattr(args, "from_team", None)
+        )
+    except grading.ProposalError as exc:
+        conn.close()
+        sys.exit(str(exc))
+    # applied=False: the rosters on file do not include this trade, because it
+    # has not happened.
+    result = grading.grade(conn, league_id, sides, applied=False)
+    _print_grade(result, "=== proposed trade ===")
     conn.close()
 
 
@@ -150,6 +228,26 @@ def main() -> None:
     sub.add_parser("values", help="snapshot market values only").set_defaults(
         func=cmd_values
     )
+
+    p_trades = sub.add_parser("trades", help="grade every completed trade")
+    p_trades.add_argument("--league", help="league id or name, if several are synced")
+    p_trades.set_defaults(func=cmd_trades)
+
+    p_prop = sub.add_parser("propose", help="grade a hypothetical trade")
+    p_prop.add_argument(
+        "--give", action="append", default=[], metavar="PLAYER",
+        help="a player you would send away (repeat for several)",
+    )
+    p_prop.add_argument(
+        "--get", action="append", default=[], metavar="PLAYER",
+        help="a player you would receive (repeat for several)",
+    )
+    p_prop.add_argument(
+        "--from", dest="from_team", metavar="TEAM",
+        help="your team, if the players you are giving up span rosters",
+    )
+    p_prop.add_argument("--league", help="league id or name, if several are synced")
+    p_prop.set_defaults(func=cmd_propose)
 
     p_disc = sub.add_parser("discover", help="list a Sleeper user's leagues and ids")
     p_disc.add_argument("username")

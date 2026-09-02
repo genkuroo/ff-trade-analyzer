@@ -1,81 +1,10 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ summary.name }} — ff-trade-analyzer</title>
-  <style>
-    :root {
-      --page: #f9f9f7; --surface: #fcfcfb;
-      --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
-      --gridline: #e1e0d9; --border: rgba(11,11,11,0.10);
-      --good: #006300; --bad: #b3261e; --accent: #2a78d6;
-      --font: system-ui, -apple-system, "Segoe UI", sans-serif;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --page: #0d0d0d; --surface: #1a1a19;
-        --text-primary: #ffffff; --text-secondary: #c3c2b7; --muted: #898781;
-        --gridline: #2c2c2a; --border: rgba(255,255,255,0.10);
-        --good: #0ca30c; --bad: #e0645b; --accent: #3987e5;
-      }
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--page); color: var(--text-primary);
-           font-family: var(--font); line-height: 1.5;
-           -webkit-font-smoothing: antialiased; }
-    .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
-    header { display: flex; align-items: baseline; justify-content: space-between;
-             gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
-    h1 { font-size: 1.5rem; margin: 0; letter-spacing: -0.01em; }
-    h2 { font-size: 1rem; margin: 36px 0 10px; letter-spacing: 0.02em;
-         text-transform: uppercase; color: var(--text-secondary); }
-    .sub { color: var(--muted); font-size: .875rem; margin: 0 0 4px; }
-    .card { background: var(--surface); border: 1px solid var(--border);
-            border-radius: 10px; overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; font-size: .9375rem; }
-    th, td { text-align: left; padding: 10px 14px;
-             border-bottom: 1px solid var(--gridline); }
-    th { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em;
-         color: var(--muted); font-weight: 600; }
-    tr:last-child td { border-bottom: none; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .rank { color: var(--muted); width: 2.5rem; font-variant-numeric: tabular-nums; }
-    .team { font-weight: 600; }
-    .bar { height: 6px; border-radius: 3px; background: var(--accent);
-           min-width: 2px; }
-    details summary { cursor: pointer; color: var(--accent); font-size: .8125rem;
-                      padding: 2px 0; }
-    .lineup { margin: 8px 0 2px; font-size: .8125rem; color: var(--text-secondary); }
-    .lineup span { display: inline-block; margin-right: 14px; }
-    .slot { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
-    .pill { display: inline-block; font-size: .6875rem; text-transform: uppercase;
-            letter-spacing: .04em; padding: 2px 7px; border-radius: 999px;
-            border: 1px solid var(--border); color: var(--text-secondary); }
-    .empty { color: var(--muted); padding: 18px 14px; font-size: .9375rem; }
-    footer { margin-top: 40px; color: var(--muted); font-size: .8125rem;
-             border-top: 1px solid var(--gridline); padding-top: 14px; }
-    a { color: var(--accent); }
-    .adds { color: var(--good); } .drops { color: var(--bad); }
-  </style>
-</head>
-<body>
-<div class="wrap">
+{% extends "base.html" %}
+{% set page = 'rankings' %}
+{% block title %}{{ summary.name }}{% endblock %}
 
-  <header>
-    <div>
-      <h1>{{ summary.name }}</h1>
-      <p class="sub">
-        {{ summary.season }} · {{ summary.kind }} · {{ summary.teams }} teams ·
-        {{ summary.trades }} trade{{ '' if summary.trades == 1 else 's' }} ·
-        {{ summary.weeks_scored }} week{{ '' if summary.weeks_scored == 1 else 's' }} scored
-      </p>
-    </div>
-    <span class="pill">values {{ summary.value_date or 'none' }}</span>
-  </header>
-
+{% block body %}
   {% if leagues|length > 1 %}
-    <p class="sub">
+    <p class="sub" style="margin-top:10px">
       {% for l in leagues %}
         {% if l.league_id == league_id %}<strong>{{ l.name }}</strong>
         {% else %}<a href="{{ url_for('league', league_id=l.league_id) }}">{{ l.name }}</a>
@@ -158,12 +87,6 @@
       <p class="empty">No transactions synced yet.</p>
     {% endif %}
   </div>
+{% endblock %}
 
-  <footer>
-    Synced {{ summary.synced_at }} · player values from FantasyCalc, league data from
-    the Sleeper API. Trade grading arrives in phases 2–3.
-  </footer>
-
-</div>
-</body>
-</html>
+{% block foot %} Trade grading is on the <a href="{{ url_for('trades', league_id=league_id) }}">trades</a> page.{% endblock %}

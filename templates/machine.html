@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% import "_grade.html" as g %}
+{% set page = 'machine' %}
+{% block title %}Trade machine — {{ summary.name }}{% endblock %}
+
+{% block body %}
+  <h2>Trade machine</h2>
+  <p class="sub" style="margin-bottom:12px">
+    Pick players from two rosters and grade the deal before you offer it. Everything
+    lives in the URL and nothing is saved, so a graded trade is just a link you can
+    paste into the league chat.
+  </p>
+
+  <form method="get" class="card" style="padding:16px">
+    <div class="picker" style="margin-bottom:12px">
+      <div>
+        <label class="slot" for="a">Your team</label>
+        <select name="a" id="a" onchange="this.form.submit()" style="width:100%">
+          {% for t in teams %}
+            <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == mine }}>{{ t.team }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="slot" for="b">Their team</label>
+        <select name="b" id="b" onchange="this.form.submit()" style="width:100%">
+          {% for t in teams %}
+            <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == theirs }}>{{ t.team }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="picker">
+      <div>
+        <div class="slot" style="margin-bottom:4px">You send</div>
+        {% for p in board_mine %}
+          <label>
+            <span>
+              <input type="checkbox" name="give" value="{{ p.player_id }}"
+                     {{ 'checked' if p.player_id in give }}>
+              {{ p.name }} <span class="slot">{{ p.position }} {{ p.team }}</span>
+            </span>
+            <span class="num">{{ '{:,}'.format(p.value) }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <div>
+        <div class="slot" style="margin-bottom:4px">You receive</div>
+        {% for p in board_theirs %}
+          <label>
+            <span>
+              <input type="checkbox" name="get" value="{{ p.player_id }}"
+                     {{ 'checked' if p.player_id in get }}>
+              {{ p.name }} <span class="slot">{{ p.position }} {{ p.team }}</span>
+            </span>
+            <span class="num">{{ '{:,}'.format(p.value) }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div style="margin-top:14px"><button type="submit">Grade this trade</button></div>
+  </form>
+
+  {% if error %}
+    <div class="card"><p class="err">{{ error }}</p></div>
+  {% endif %}
+
+  {% if result %}
+    <h2>Grade</h2>
+    <div class="card">
+      <div class="sides">
+        {% for s in result.sides.values() %}{{ g.side(s) }}{% endfor %}
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

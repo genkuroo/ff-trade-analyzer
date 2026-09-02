@@ -28,6 +28,9 @@ Flat modules in the style of `../fitness-dashboard`: `db.py` owns the schema,
 is the UI, `sources/` holds one module per external API, and each phase adds a
 module rather than a package.
 
+`grading.py` is the phase 2 engine; it depends on `analytics.best_lineup` and
+on nothing in `app.py`, so the CLI and the web UI grade identically.
+
 `app.py` never calls an external API. Fetching belongs to `cli.py sync`, so a
 page load can never be slow, rate-limited, or broken by someone else's outage.
 
@@ -66,6 +69,17 @@ Two external sources, both free and keyless:
   now; phase 3's counterfactual replay ("what would this roster have scored
   without the trade?") calls the same function with weekly points instead of
   market values. Keep it taking a generic `score` field.
+- **`grade(..., applied=)` is easy to get wrong and fails silently.** It says
+  whether the roster snapshot on file already includes the trade. It does for a
+  completed trade, it does not for a proposal. Passing the wrong value produces
+  a fit delta of exactly zero, which looks like a plausible answer rather than
+  a bug.
+- **Value and fit are reported separately and must stay that way.** Blending
+  them hides the case the project exists to surface: a rebuild trade should win
+  on value and lose on fit. Fit is also what handles consolidation, so there is
+  no "2-for-1 premium" constant to tune — do not add one.
+- Fit is scored against the *size of the deal*, not the size of the roster.
+  Against roster value every trade looks like a rounding error.
 - Kickers and defenses come back unvalued from FantasyCalc — correct, they have
   no trade value. They are kept in the lineup at zero rather than dropped, so
   their slots don't read as unfillable.

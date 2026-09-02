@@ -9,11 +9,12 @@ Run:  python app.py   ->  http://localhost:5003
 
 import os
 
-from flask import Flask, abort, redirect, render_template, url_for
+from flask import Flask, abort, redirect, render_template, request, url_for
 
 import analytics
 import config
 import db
+import grading
 
 app = Flask(__name__)
 
@@ -55,6 +56,67 @@ def league(league_id):
     }
     conn.close()
     return render_template("index.html", **context)
+
+
+@app.route("/league/<league_id>/trades")
+def trades(league_id):
+    conn = db.connect()
+    if not analytics.league_row(conn, league_id):
+        conn.close()
+        abort(404)
+    context = {
+        "summary": analytics.league_summary(conn, league_id),
+        "trades": grading.completed_trades(conn, league_id),
+        "league_id": league_id,
+    }
+    conn.close()
+    return render_template("trades.html", **context)
+
+
+@app.route("/league/<league_id>/machine")
+def machine(league_id):
+    """The trade machine: pick players from two rosters, get both grades.
+
+    Deliberately a GET with everything in the query string. Nothing is written,
+    so a proposal is a plain URL — which means a graded trade can be pasted
+    into the league chat and everyone sees the same thing.
+    """
+    conn = db.connect()
+    if not analytics.league_row(conn, league_id):
+        conn.close()
+        abort(404)
+
+    teams = analytics.power_rankings(conn, league_id)
+    ids = [t["roster_id"] for t in teams]
+    mine = request.args.get("a", type=int) or (ids[0] if ids else None)
+    theirs = request.args.get("b", type=int) or (ids[1] if len(ids) > 1 else None)
+    give = request.args.getlist("give")
+    get = request.args.getlist("get")
+
+    result, error = None, None
+    if give and get:
+        try:
+            sides = grading.sides_from_ids(conn, league_id, mine, theirs, give, get)
+            # applied=False: these rosters do not include the proposed trade.
+            result = grading.grade(conn, league_id, sides, applied=False)
+        except grading.ProposalError as exc:
+            error = str(exc)
+
+    context = {
+        "summary": analytics.league_summary(conn, league_id),
+        "league_id": league_id,
+        "teams": teams,
+        "mine": mine,
+        "theirs": theirs,
+        "board_mine": grading.roster_board(conn, league_id, mine) if mine else [],
+        "board_theirs": grading.roster_board(conn, league_id, theirs) if theirs else [],
+        "give": set(give),
+        "get": set(get),
+        "result": result,
+        "error": error,
+    }
+    conn.close()
+    return render_template("machine.html", **context)
 
 
 @app.route("/healthz")
