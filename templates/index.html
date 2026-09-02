@@ -103,19 +103,30 @@
             <div class="bar" style="width: {{ (team.lineup_value / top * 100)|round(1) }}%"></div>
             <details>
               <summary>lineup</summary>
-              <div class="lineup">
+              <table class="lineup">
                 {% for p in team.lineup %}
-                  <span><span class="slot">{{ p.slot }}</span>
-                  {{ p.name }} <span class="slot">{{ '{:,}'.format(p.score|int) }}</span></span>
+                  <tr>
+                    <td class="lslot">{{ p.slot.replace('_', ' ') }}</td>
+                    <td class="lname">{{ p.name }}</td>
+                    <td class="lval">
+                      {% if p.score %}{{ '{:,}'.format(p.score|int) }}
+                      {% else %}<span class="slot">unvalued</span>{% endif %}
+                    </td>
+                  </tr>
                 {% endfor %}
-              </div>
+                <tr class="ltotal">
+                  <td class="lslot">total</td>
+                  <td class="lname"></td>
+                  <td class="lval">{{ '{:,}'.format(team.lineup_value|int) }}</td>
+                </tr>
+              </table>
             </details>
           </td>
           <td>{{ team.record }}</td>
           <td class="num">{{ '{:,}'.format(team.lineup_value|int) }}</td>
           <td class="num">{{ '{:,}'.format(team.total_value|int) }}</td>
           <td class="num">{{ team.depth_ratio }}</td>
-          <td>{{ team.best_player }}</td>
+          <td class="asset-name">{{ team.best_player }}</td>
         </tr>
       {% endfor %}
       </tbody>
