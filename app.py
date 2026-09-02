@@ -119,6 +119,48 @@ def machine(league_id):
     return render_template("machine.html", **context)
 
 
+@app.route("/league/<league_id>/players")
+def players(league_id):
+    """Raw market observations per player, next to the movement derived from them.
+
+    Filtering is server-side (it decides which rows exist); sorting is
+    client-side (it only reorders rows already sent). That split keeps a
+    re-sort instant and avoids a round trip for something the browser can do.
+    """
+    conn = db.connect()
+    if not analytics.league_row(conn, league_id):
+        conn.close()
+        abort(404)
+
+    window = request.args.get("window", type=int) or 7
+    position = request.args.get("pos") or ""
+    owner = request.args.get("owner", type=int)
+    scope = request.args.get("scope") or "rostered"
+
+    rows = analytics.player_report(
+        conn, league_id, window_days=window, rostered_only=(scope != "all")
+    )
+    if position:
+        rows = [r for r in rows if r["position"] == position]
+    if owner:
+        rows = [r for r in rows if r.get("roster_id") == owner]
+
+    context = {
+        "summary": analytics.league_summary(conn, league_id),
+        "league_id": league_id,
+        "rows": rows,
+        "draft": analytics.draft_report(conn, league_id),
+        "teams": analytics.power_rankings(conn, league_id),
+        "window": window,
+        "position": position,
+        "owner": owner,
+        "scope": scope,
+        "positions": sorted({r["position"] for r in rows if r["position"]}),
+    }
+    conn.close()
+    return render_template("players.html", **context)
+
+
 @app.route("/healthz")
 def healthz():
     """Liveness probe that also proves the database is readable.

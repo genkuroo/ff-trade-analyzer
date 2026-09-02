@@ -98,6 +98,19 @@
     button { background: var(--accent); color: #fff; border-color: transparent;
              font-weight: 600; cursor: pointer; padding: 8px 18px; }
     .err { color: var(--bad); font-size: .875rem; padding: 10px 16px; }
+    .scroll { overflow-x: auto; }
+    .dense { font-size: .8125rem; white-space: nowrap; }
+    .dense th, .dense td { padding: 6px 10px; }
+    .dense th[data-sort] { cursor: pointer; user-select: none; }
+    .dense th[data-sort]:hover { color: var(--text-primary); }
+    .dense th.sorted::after { content: " \2193"; }
+    .dense th.sorted.asc::after { content: " \2191"; }
+    .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
+               padding: 12px 16px; }
+    .filters label { display: block; }
+    .raw { color: var(--text-primary); }
+    .derived { font-variant-numeric: tabular-nums; }
+    .note { font-size: .8125rem; color: var(--muted); padding: 0 16px 12px; }
   </style>
 </head>
 <body>
@@ -122,6 +135,8 @@
        class="{{ 'on' if page == 'trades' }}">Trades</a>
     <a href="{{ url_for('machine', league_id=league_id) }}"
        class="{{ 'on' if page == 'machine' }}">Trade machine</a>
+    <a href="{{ url_for('players', league_id=league_id) }}"
+       class="{{ 'on' if page == 'players' }}">Players</a>
   </nav>
 
   {% block body %}{% endblock %}

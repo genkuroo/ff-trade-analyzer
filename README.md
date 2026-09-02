@@ -145,6 +145,23 @@ FAAB is priced off the league's own lineups: a full budget is worth roughly the
 weakest player anyone is actually starting, because that is what the money is
 for.
 
+### The players page
+
+`/league/<id>/players` puts the raw observations and the derived movement side
+by side, split by a visible divider: everything left of it is stored as-is,
+everything right of it is computed at read time. Sortable by any column,
+filterable by position, team, and window (1–30 days).
+
+```
+Matthew Stafford QB LA   value 1,510  ovr 147  QB24  ADP 117  pick 230
+                         Δ value −46 (−3.0%)   Δ rank −7   Δ ADP +113
+```
+
+That last number is the interesting one: he lasted 113 picks past his ADP, which
+in a 1QB dynasty startup is exactly what should happen to a 38-year-old
+quarterback. Alongside it, a draft report ranks the biggest reaches and the
+biggest fallers.
+
 ### The trade machine
 
 `/league/<id>/machine` grades a hypothetical before you offer it. Everything

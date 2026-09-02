@@ -383,6 +383,7 @@ def player_report(conn, league_id: str, window_days: int = 7,
                 "roster_percent": row["roster_percent"],
                 "value_stddev_pct": row["value_stddev_pct"],
                 "is_starter": bool(row["is_starter"]),
+                "roster_id": row["roster_id"],
                 "owner": row["team_name"] or row["display_name"],
                 # --- derived ----------------------------------------------
                 "value_delta": delta,
