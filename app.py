@@ -172,6 +172,34 @@ def players(league_id):
     return render_template("players.html", **context)
 
 
+@app.route("/league/<league_id>/team/<int:roster_id>")
+def team(league_id, roster_id):
+    """One team's roster, split into who is here now and who has passed through.
+
+    The two are genuinely different questions. Power rankings care about the
+    current roster; trade grading cares about who was held *when*, because a
+    player's points only count for you while he was actually yours.
+    """
+    conn = db.connect()
+    if not analytics.league_row(conn, league_id):
+        conn.close()
+        abort(404)
+    ranked = analytics.power_rankings(conn, league_id)
+    entry = next((t for t in ranked if t["roster_id"] == roster_id), None)
+    if entry is None:
+        conn.close()
+        abort(404)
+    context = {
+        "summary": analytics.league_summary(conn, league_id),
+        "league_id": league_id,
+        "team": entry,
+        "teams": ranked,
+        "history": analytics.all_time_roster(conn, league_id, roster_id),
+    }
+    conn.close()
+    return render_template("team.html", **context)
+
+
 @app.route("/healthz")
 def healthz():
     """Liveness probe that also proves the database is readable.

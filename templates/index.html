@@ -40,7 +40,10 @@
         <tr>
           <td class="rank">{{ team.rank }}</td>
           <td>
-            <div class="team">{{ team.team }}</div>
+            <div class="team">
+              <a href="{{ url_for('team', league_id=league_id, roster_id=team.roster_id) }}"
+                 style="color:inherit">{{ team.team }}</a>
+            </div>
             <div class="bar" style="width: {{ (team.lineup_value / top * 100)|round(1) }}%"></div>
             <details>
               <summary>lineup</summary>

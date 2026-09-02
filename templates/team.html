@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% set page = 'team' %}
+{% block title %}{{ team.team }} — {{ summary.name }}{% endblock %}
+
+{% block body %}
+  <h2>{{ team.team }}</h2>
+  <p class="sub" style="margin-bottom:12px">
+    Rank {{ team.rank }} · lineup value {{ '{:,}'.format(team.lineup_value|int) }} ·
+    total {{ '{:,}'.format(team.total_value|int) }} · record {{ team.record or '—' }}
+  </p>
+  <p class="sub" style="margin-bottom:14px">
+    Two different rosters, kept apart on purpose. <strong>Active</strong> is who is
+    here now — that is what power rankings and the trade machine use.
+    <strong>Passed through</strong> is everyone this team has ever held, with the
+    weeks they were held. Trade grading needs the second one: a player's points
+    only count for you while he was actually yours, so credit stops the week he
+    was dropped or flipped on.
+  </p>
+
+  <div class="card">
+    <div style="padding:10px 16px;border-bottom:1px solid var(--gridline)">
+      <span class="pill">active</span>
+      <span class="slot" style="margin-left:8px">{{ history.active|length }} players</span>
+    </div>
+    <div class="scroll">
+      <table class="dense">
+        <thead><tr>
+          <th>Player</th><th>Pos</th><th>NFL</th>
+          <th>Arrived via</th><th class="num">Weeks held</th>
+        </tr></thead>
+        <tbody>
+        {% for s in history.active|sort(attribute='acquired_week') %}
+          <tr>
+            <td><strong>{{ s.name }}</strong></td>
+            <td>{{ s.position }}</td>
+            <td class="slot">{{ s.team }}</td>
+            <td>
+              <span class="pill">{{ s.acquired_via.replace('_', ' ') }}</span>
+              {% if s.acquired_week %}<span class="slot">wk {{ s.acquired_week }}</span>{% endif %}
+            </td>
+            <td class="num">{{ s.weeks_held }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="padding:10px 16px;border-bottom:1px solid var(--gridline)">
+      <span class="pill">passed through</span>
+      <span class="slot" style="margin-left:8px">
+        {{ history.departed|length }} no longer here · {{ history.total_held }} held in total
+      </span>
+    </div>
+    {% if history.departed %}
+      <div class="scroll">
+        <table class="dense">
+          <thead><tr>
+            <th>Player</th><th>Pos</th><th>Arrived via</th>
+            <th class="num">Weeks</th><th class="num">Held</th>
+          </tr></thead>
+          <tbody>
+          {% for s in history.departed|sort(attribute='last_week', reverse=true) %}
+            <tr>
+              <td><strong>{{ s.name }}</strong></td>
+              <td>{{ s.position }}</td>
+              <td><span class="pill">{{ s.acquired_via.replace('_', ' ') }}</span></td>
+              <td class="num slot">{{ s.first_week }}–{{ s.last_week }}</td>
+              <td class="num">{{ s.weeks_held }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">Nobody has left this roster yet.</p>
+    {% endif %}
+  </div>
+
+  <h2>Other teams</h2>
+  <div class="card"><div style="padding:12px 16px">
+    {% for t in teams %}
+      {% if t.roster_id == team.roster_id %}<strong>{{ t.team }}</strong>
+      {% else %}<a href="{{ url_for('team', league_id=league_id, roster_id=t.roster_id) }}">{{ t.team }}</a>
+      {% endif %}{% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </div></div>
+{% endblock %}

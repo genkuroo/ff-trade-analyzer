@@ -81,6 +81,12 @@ Two external sources, both free and keyless:
   completed trade, it does not for a proposal. Passing the wrong value produces
   a fit delta of exactly zero, which looks like a plausible answer rather than
   a bug.
+- **A team has two rosters: `active` and all-time.** `analytics.roster_stints`
+  and `all_time_roster` expose the second. Anything that credits a player for
+  points must scope to the weeks he was actually on that roster — points he
+  scored after being dropped belong to whoever held him then. Stints are runs of
+  *consecutive* weeks; `MIN`/`MAX` would merge two separate spells into one that
+  never happened.
 - **`retro.py` has two swings and they must never be mixed.** `swing` is
   actual-basis (real lineups kept, only vacated slots refilled) and is the only
   thing a flipped game may be computed from. `roster_swing` is optimal-vs-

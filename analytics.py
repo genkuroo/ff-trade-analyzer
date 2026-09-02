@@ -421,3 +421,111 @@ def draft_report(conn, league_id: str, rows: list[dict] | None = None) -> dict:
         "reaches": reaches,   # taken earlier than the market said
         "steals": steals,     # lasted longer than the market said
     }
+
+
+# -- roster history --------------------------------------------------------
+
+
+def roster_stints(conn, league_id: str, roster_id: int | None = None) -> list[dict]:
+    """Every spell a player has spent on a team: an "all-time roster".
+
+    Two different questions get asked of a roster constantly, and blurring them
+    causes bugs: *who is on this team* and *who has ever been on this team*. A
+    trade grade needs the second — you cannot credit a player for points he
+    scored after you dropped him — while a power ranking needs the first.
+
+    A stint is a run of consecutive weeks. Players do leave and come back, so
+    ``MIN(week)``/``MAX(week)`` would silently merge two separate spells into
+    one long stint that never happened; the runs are walked explicitly instead.
+
+    Source is ``player_weeks``, which is Sleeper's own weekly record of who
+    rostered whom. That makes it authoritative rather than reconstructed, and
+    it reaches back further than this project's own daily roster snapshots.
+    """
+    params = [league_id]
+    clause = ""
+    if roster_id is not None:
+        clause = " AND pw.roster_id = ?"
+        params.append(roster_id)
+
+    rows = conn.execute(
+        f"""SELECT pw.roster_id, pw.player_id, pw.week,
+                   p.name, p.position, p.team
+              FROM player_weeks pw
+              JOIN players p ON p.player_id = pw.player_id
+             WHERE pw.league_id = ?{clause}
+             ORDER BY pw.roster_id, pw.player_id, pw.week""",
+        params,
+    ).fetchall()
+
+    last_week = conn.execute(
+        "SELECT MAX(week) AS w FROM player_weeks WHERE league_id = ?", (league_id,)
+    ).fetchone()["w"] or 0
+
+    stints: list[dict] = []
+    current = None
+    for row in rows:
+        key = (row["roster_id"], row["player_id"])
+        if current and current["_key"] == key and row["week"] == current["last_week"] + 1:
+            current["last_week"] = row["week"]
+            current["weeks_held"] += 1
+            continue
+        if current:
+            stints.append(current)
+        current = {
+            "_key": key,
+            "roster_id": row["roster_id"],
+            "player_id": row["player_id"],
+            "name": row["name"],
+            "position": row["position"],
+            "team": row["team"],
+            "first_week": row["week"],
+            "last_week": row["week"],
+            "weeks_held": 1,
+        }
+    if current:
+        stints.append(current)
+
+    for stint in stints:
+        stint.pop("_key")
+        stint["active"] = stint["last_week"] == last_week
+    return stints
+
+
+def stint_provenance(conn, league_id: str) -> dict:
+    """How each player arrived on each roster: {(roster_id, player_id): type}.
+
+    Draft picks leave no transaction, so anything without one is treated as
+    drafted -- which is what "no record of them arriving" means for a roster
+    that has held the player since week one.
+    """
+    out = {}
+    for row in conn.execute(
+        """SELECT tp.roster_id, tp.player_id, t.type, t.week, t.created_ms
+             FROM transaction_players tp
+             JOIN transactions t ON t.txn_id = tp.txn_id
+            WHERE t.league_id = ? AND tp.direction = 'add' AND t.status = 'complete'
+            ORDER BY t.created_ms""",
+        (league_id,),
+    ):
+        out[(row["roster_id"], row["player_id"])] = {
+            "via": row["type"],
+            "week": row["week"],
+            "created_ms": row["created_ms"],
+        }
+    return out
+
+
+def all_time_roster(conn, league_id: str, roster_id: int) -> dict:
+    """One team's full history, split into who is still here and who is not."""
+    provenance = stint_provenance(conn, league_id)
+    stints = roster_stints(conn, league_id, roster_id)
+    for stint in stints:
+        source = provenance.get((roster_id, stint["player_id"]))
+        stint["acquired_via"] = source["via"] if source else "draft"
+        stint["acquired_week"] = source["week"] if source else 0
+    return {
+        "active": [s for s in stints if s["active"]],
+        "departed": [s for s in stints if not s["active"]],
+        "total_held": len(stints),
+    }

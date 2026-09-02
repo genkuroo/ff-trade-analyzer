@@ -218,6 +218,26 @@ in a 1QB dynasty startup is exactly what should happen to a 38-year-old
 quarterback. Alongside it, a draft report ranks the biggest reaches and the
 biggest fallers.
 
+### Two rosters, kept apart
+
+A team has two rosters and conflating them causes bugs:
+
+- **active** — who is on it now. Power rankings and the trade machine use this.
+- **all-time** — everyone it has ever held, with the weeks they were held.
+  Trade grading needs this one, because a player's points only count for you
+  while he was actually yours; credit stops the week he was dropped or flipped
+  on.
+
+`/league/<id>/team/<roster_id>` shows both, with how each player arrived (draft,
+trade, waiver, free agency) and how long they stayed. Stints are runs of
+consecutive weeks rather than a first-and-last-seen range, because players do
+leave and come back and `MIN`/`MAX` would silently merge two separate spells
+into one that never happened.
+
+The source is `player_weeks` — Sleeper's own weekly record of who rostered whom
+— so this is authoritative rather than reconstructed, and it reaches back
+further than this project's own daily snapshots.
+
 ### The trade machine
 
 `/league/<id>/machine` grades a hypothetical before you offer it. Everything

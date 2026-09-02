@@ -337,36 +337,53 @@ def _contributions(conn, league_id, roster_id, side, weeks) -> dict:
     number that makes naive trade graders wrong, so it is worth displaying them
     next to the number that actually matters.
     """
+    if not weeks:
+        return {"acquired": [], "sent_away": []}
+
+    # One query for the whole window rather than one per player per week. The
+    # roster_id filter is the attribution window: a player only counts while he
+    # was actually on this team, so points he scored after being dropped or
+    # flipped on belong to whoever held him then.
+    placeholders = ",".join("?" for _ in weeks)
+    rows = conn.execute(
+        f"""SELECT pw.player_id, pw.points, pw.started, p.name, p.position
+              FROM player_weeks pw
+              JOIN players p ON p.player_id = pw.player_id
+             WHERE pw.league_id = ? AND pw.roster_id = ?
+               AND pw.week IN ({placeholders})""",
+        [league_id, roster_id, *weeks],
+    ).fetchall()
+
+    tally: dict[str, dict] = {}
+    for row in rows:
+        entry = tally.setdefault(
+            row["player_id"],
+            {"player_id": row["player_id"], "name": row["name"],
+             "position": row["position"], "started_points": 0.0,
+             "bench_points": 0.0, "weeks_held": 0},
+        )
+        entry["weeks_held"] += 1
+        key = "started_points" if row["started"] else "bench_points"
+        entry[key] += row["points"] or 0.0
+
     def totals(player_ids):
         out = []
         for pid in player_ids:
-            row = conn.execute(
-                "SELECT name, position FROM players WHERE player_id = ?", (pid,)
-            ).fetchone()
-            started = bench = 0.0
-            appearances = 0
-            for week in weeks:
-                hit = conn.execute(
-                    """SELECT points, started, roster_id FROM player_weeks
-                        WHERE league_id = ? AND week = ? AND player_id = ?""",
-                    (league_id, week, pid),
+            entry = tally.get(pid)
+            if entry is None:
+                row = conn.execute(
+                    "SELECT name, position FROM players WHERE player_id = ?", (pid,)
                 ).fetchone()
-                if not hit:
-                    continue
-                if hit["roster_id"] == roster_id:
-                    appearances += 1
-                    if hit["started"]:
-                        started += hit["points"] or 0.0
-                    else:
-                        bench += hit["points"] or 0.0
+                entry = {
+                    "player_id": pid, "name": row["name"] if row else pid,
+                    "position": row["position"] if row else "",
+                    "started_points": 0.0, "bench_points": 0.0, "weeks_held": 0,
+                }
             out.append(
                 {
-                    "player_id": pid,
-                    "name": row["name"] if row else pid,
-                    "position": row["position"] if row else "",
-                    "started_points": round(started, 2),
-                    "bench_points": round(bench, 2),
-                    "weeks_held": appearances,
+                    **entry,
+                    "started_points": round(entry["started_points"], 2),
+                    "bench_points": round(entry["bench_points"], 2),
                 }
             )
         return out
