@@ -1,0 +1,9 @@
+{
+  "leagues": [
+    {
+      "id": "YOUR_SLEEPER_LEAGUE_ID",
+      "label": "moneyhole",
+      "primary": true
+    }
+  ]
+}

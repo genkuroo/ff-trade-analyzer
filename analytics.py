@@ -1,0 +1,272 @@
+"""Read-only computations over the synced database.
+
+Nothing here fetches anything; every function takes a connection and returns
+plain dicts. That split is deliberate -- the web app must never be the thing
+that calls Sleeper, so a page load can't be slow or rate-limited.
+
+The important piece is :func:`best_lineup`. Fantasy value is not the sum of a
+roster, it is the sum of the players you can actually *start*, and the two
+diverge sharply for a team with four good running backs and no tight end.
+The same solver is what Phase 3 will use to replay a week's scoring with and
+without a trade.
+"""
+
+from __future__ import annotations
+
+import json
+
+# Which real positions may fill each lineup slot. Sleeper's own slot names.
+SLOT_ELIGIBILITY = {
+    "QB": {"QB"},
+    "RB": {"RB"},
+    "WR": {"WR"},
+    "TE": {"TE"},
+    "K": {"K"},
+    "DEF": {"DEF"},
+    "FLEX": {"RB", "WR", "TE"},
+    "WRRB_FLEX": {"RB", "WR"},
+    "REC_FLEX": {"WR", "TE"},
+    "SUPER_FLEX": {"QB", "RB", "WR", "TE"},
+    "IDP_FLEX": {"DL", "LB", "DB"},
+}
+
+# Slots that hold players but never score.
+BENCH_SLOTS = {"BN", "TAXI", "IR"}
+
+
+def starting_slots(roster_positions: list[str]) -> list[str]:
+    """The scoring slots of a lineup, bench and taxi removed."""
+    return [slot for slot in roster_positions if slot not in BENCH_SLOTS]
+
+
+def best_lineup(candidates: list[dict], slots: list[str]) -> tuple[list[dict], float]:
+    """Fill ``slots`` with the highest-scoring legal assignment of candidates.
+
+    Each candidate is ``{"player_id", "position", "score"}``. Returns the
+    chosen players (each tagged with the slot they filled) and the total.
+
+    Slots are filled most-restrictive-first -- a dedicated QB slot before a
+    SUPER_FLEX, single-position slots before any flex -- because a flex can
+    always take a leftover, while giving a flex the best running back first can
+    leave a dedicated RB slot empty. With real lineup sizes (nine or ten slots)
+    that ordering produces the true optimum, and it avoids the combinatorial
+    search a general solver would need.
+    """
+    remaining = {c["player_id"]: c for c in candidates}
+    ordered = sorted(
+        range(len(slots)), key=lambda i: len(SLOT_ELIGIBILITY.get(slots[i], set()))
+    )
+
+    chosen: list[dict] = []
+    for index in ordered:
+        slot = slots[index]
+        eligible = SLOT_ELIGIBILITY.get(slot, {slot})
+        pool = [c for c in remaining.values() if c["position"] in eligible]
+        if not pool:
+            continue
+        pick = max(pool, key=lambda c: c["score"])
+        del remaining[pick["player_id"]]
+        chosen.append({**pick, "slot": slot, "slot_index": index})
+
+    chosen.sort(key=lambda c: c["slot_index"])
+    return chosen, round(sum(c["score"] for c in chosen), 2)
+
+
+# -- database-backed views -------------------------------------------------
+
+
+def league_row(conn, league_id: str):
+    return conn.execute(
+        "SELECT * FROM leagues WHERE league_id = ?", (league_id,)
+    ).fetchone()
+
+
+def all_leagues(conn) -> list:
+    return conn.execute(
+        "SELECT * FROM leagues ORDER BY season DESC, name"
+    ).fetchall()
+
+
+def config_key_for(league) -> str:
+    kind = "dyn" if league["league_type"] == 2 else "red"
+    return f"{kind}_{league['num_qbs']}qb_{league['num_teams']}tm_ppr{league['ppr']:g}"
+
+
+def latest_value_date(conn, config_key: str) -> str | None:
+    row = conn.execute(
+        "SELECT MAX(asof_date) AS d FROM player_values WHERE config_key = ?",
+        (config_key,),
+    ).fetchone()
+    return row["d"] if row else None
+
+
+def power_rankings(conn, league_id: str) -> list[dict]:
+    """Rank teams by the value of the lineup they can actually field.
+
+    Two numbers per team, and the gap between them is the story:
+
+      * **lineup** -- the best legal starting lineup they could put out today.
+        This is what wins games.
+      * **total** -- every player they own, taxi and IR included. This is what
+        they could trade.
+
+    A team with a high total and a mediocre lineup is holding depth it cannot
+    use, which is exactly the team that should be making a consolidation trade.
+    Kickers and defenses come back unvalued from the market data (they have no
+    trade value), so they contribute zero to both numbers rather than being
+    dropped -- otherwise their lineup slots would look unfillable.
+    """
+    league = league_row(conn, league_id)
+    if not league:
+        return []
+    key = config_key_for(league)
+    asof = latest_value_date(conn, key)
+    slots = starting_slots(json.loads(league["roster_positions"]))
+    snapshot = _latest_roster_date(conn, league_id)
+
+    rows = conn.execute(
+        """SELECT rs.roster_id, rs.player_id, rs.slot AS roster_slot,
+                  p.name, p.position, p.team, p.age,
+                  COALESCE(pv.value, 0) AS value
+             FROM roster_slots rs
+             JOIN players p ON p.player_id = rs.player_id
+             LEFT JOIN player_values pv
+                    ON pv.player_id = rs.player_id
+                   AND pv.config_key = ? AND pv.asof_date = ?
+            WHERE rs.league_id = ? AND rs.snapshot_date = ?""",
+        (key, asof, league_id, snapshot),
+    ).fetchall()
+
+    managers = {
+        m["roster_id"]: m
+        for m in conn.execute(
+            "SELECT * FROM managers WHERE league_id = ?", (league_id,)
+        )
+    }
+
+    by_roster: dict[int, list] = {}
+    for row in rows:
+        by_roster.setdefault(row["roster_id"], []).append(row)
+
+    ranked = []
+    for roster_id, players in by_roster.items():
+        manager = managers.get(roster_id) or {}
+        # Taxi and IR players cannot be started, so they are worth depth but
+        # never lineup points. Counting them as startable would flatter a
+        # rebuilding team holding three stashed rookies.
+        startable = [
+            {"player_id": p["player_id"], "position": p["position"], "score": p["value"],
+             "name": p["name"], "team": p["team"], "age": p["age"]}
+            for p in players
+            if p["roster_slot"] == "active"
+        ]
+        lineup, lineup_value = best_lineup(startable, slots)
+        ranked.append(
+            {
+                "roster_id": roster_id,
+                "team": (manager["team_name"] if manager else None)
+                or (manager["display_name"] if manager else None)
+                or f"Roster {roster_id}",
+                "manager": manager["display_name"] if manager else "",
+                "record": _record(manager),
+                "points_for": manager["points_for"] if manager else 0.0,
+                "lineup_value": lineup_value,
+                "total_value": sum(p["value"] for p in players),
+                "lineup": lineup,
+                "best_player": max(players, key=lambda p: p["value"])["name"]
+                if players else "",
+                "depth_ratio": round(
+                    (sum(p["value"] for p in players) or 1) / (lineup_value or 1), 2
+                ),
+            }
+        )
+
+    ranked.sort(key=lambda t: t["lineup_value"], reverse=True)
+    for position, team in enumerate(ranked, start=1):
+        team["rank"] = position
+    return ranked
+
+
+def _record(manager) -> str:
+    if not manager:
+        return ""
+    ties = f"-{manager['ties']}" if manager["ties"] else ""
+    return f"{manager['wins']}-{manager['losses']}{ties}"
+
+
+def _latest_roster_date(conn, league_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT MAX(snapshot_date) AS d FROM roster_slots WHERE league_id = ?",
+        (league_id,),
+    ).fetchone()
+    return row["d"] if row else None
+
+
+def recent_transactions(conn, league_id: str, limit: int = 25) -> list[dict]:
+    """Latest completed moves, with player names resolved."""
+    rows = conn.execute(
+        """SELECT t.txn_id, t.week, t.type, t.created_ms
+             FROM transactions t
+            WHERE t.league_id = ? AND t.status = 'complete'
+            ORDER BY t.created_ms DESC LIMIT ?""",
+        (league_id, limit),
+    ).fetchall()
+
+    managers = {
+        m["roster_id"]: (m["team_name"] or m["display_name"])
+        for m in conn.execute(
+            "SELECT * FROM managers WHERE league_id = ?", (league_id,)
+        )
+    }
+
+    out = []
+    for row in rows:
+        legs = conn.execute(
+            """SELECT tp.direction, tp.roster_id, p.name, p.position, p.team
+                 FROM transaction_players tp
+                 JOIN players p ON p.player_id = tp.player_id
+                WHERE tp.txn_id = ?""",
+            (row["txn_id"],),
+        ).fetchall()
+        out.append(
+            {
+                "txn_id": row["txn_id"],
+                "week": row["week"],
+                "type": row["type"],
+                "created_ms": row["created_ms"],
+                "adds": [
+                    {"name": l["name"], "position": l["position"],
+                     "team": managers.get(l["roster_id"], "?")}
+                    for l in legs if l["direction"] == "add"
+                ],
+                "drops": [
+                    {"name": l["name"], "position": l["position"],
+                     "team": managers.get(l["roster_id"], "?")}
+                    for l in legs if l["direction"] == "drop"
+                ],
+            }
+        )
+    return out
+
+
+def league_summary(conn, league_id: str) -> dict:
+    league = league_row(conn, league_id)
+    trades = conn.execute(
+        "SELECT COUNT(*) AS n FROM transactions WHERE league_id = ? AND type = 'trade'",
+        (league_id,),
+    ).fetchone()["n"]
+    weeks = conn.execute(
+        "SELECT COUNT(DISTINCT week) AS n FROM player_weeks WHERE league_id = ?",
+        (league_id,),
+    ).fetchone()["n"]
+    return {
+        "name": league["name"],
+        "season": league["season"],
+        "status": league["status"],
+        "kind": {0: "redraft", 1: "keeper", 2: "dynasty"}.get(league["league_type"], "?"),
+        "teams": league["num_teams"],
+        "trades": trades,
+        "weeks_scored": weeks,
+        "synced_at": league["synced_at"],
+        "value_date": latest_value_date(conn, config_key_for(league)),
+    }

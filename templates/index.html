@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ summary.name }} — ff-trade-analyzer</title>
+  <style>
+    :root {
+      --page: #f9f9f7; --surface: #fcfcfb;
+      --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+      --gridline: #e1e0d9; --border: rgba(11,11,11,0.10);
+      --good: #006300; --bad: #b3261e; --accent: #2a78d6;
+      --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #0d0d0d; --surface: #1a1a19;
+        --text-primary: #ffffff; --text-secondary: #c3c2b7; --muted: #898781;
+        --gridline: #2c2c2a; --border: rgba(255,255,255,0.10);
+        --good: #0ca30c; --bad: #e0645b; --accent: #3987e5;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--page); color: var(--text-primary);
+           font-family: var(--font); line-height: 1.5;
+           -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
+    header { display: flex; align-items: baseline; justify-content: space-between;
+             gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+    h1 { font-size: 1.5rem; margin: 0; letter-spacing: -0.01em; }
+    h2 { font-size: 1rem; margin: 36px 0 10px; letter-spacing: 0.02em;
+         text-transform: uppercase; color: var(--text-secondary); }
+    .sub { color: var(--muted); font-size: .875rem; margin: 0 0 4px; }
+    .card { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 10px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: .9375rem; }
+    th, td { text-align: left; padding: 10px 14px;
+             border-bottom: 1px solid var(--gridline); }
+    th { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em;
+         color: var(--muted); font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .rank { color: var(--muted); width: 2.5rem; font-variant-numeric: tabular-nums; }
+    .team { font-weight: 600; }
+    .bar { height: 6px; border-radius: 3px; background: var(--accent);
+           min-width: 2px; }
+    details summary { cursor: pointer; color: var(--accent); font-size: .8125rem;
+                      padding: 2px 0; }
+    .lineup { margin: 8px 0 2px; font-size: .8125rem; color: var(--text-secondary); }
+    .lineup span { display: inline-block; margin-right: 14px; }
+    .slot { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
+    .pill { display: inline-block; font-size: .6875rem; text-transform: uppercase;
+            letter-spacing: .04em; padding: 2px 7px; border-radius: 999px;
+            border: 1px solid var(--border); color: var(--text-secondary); }
+    .empty { color: var(--muted); padding: 18px 14px; font-size: .9375rem; }
+    footer { margin-top: 40px; color: var(--muted); font-size: .8125rem;
+             border-top: 1px solid var(--gridline); padding-top: 14px; }
+    a { color: var(--accent); }
+    .adds { color: var(--good); } .drops { color: var(--bad); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>{{ summary.name }}</h1>
+      <p class="sub">
+        {{ summary.season }} · {{ summary.kind }} · {{ summary.teams }} teams ·
+        {{ summary.trades }} trade{{ '' if summary.trades == 1 else 's' }} ·
+        {{ summary.weeks_scored }} week{{ '' if summary.weeks_scored == 1 else 's' }} scored
+      </p>
+    </div>
+    <span class="pill">values {{ summary.value_date or 'none' }}</span>
+  </header>
+
+  {% if leagues|length > 1 %}
+    <p class="sub">
+      {% for l in leagues %}
+        {% if l.league_id == league_id %}<strong>{{ l.name }}</strong>
+        {% else %}<a href="{{ url_for('league', league_id=l.league_id) }}">{{ l.name }}</a>
+        {% endif %}{% if not loop.last %} · {% endif %}
+      {% endfor %}
+    </p>
+  {% endif %}
+
+  <h2>Power rankings</h2>
+  <p class="sub">
+    Ranked by <strong>lineup value</strong> — the best legal starting lineup a team
+    could field today, not the sum of everyone they own. The gap between lineup and
+    total value is depth that cannot be started, which is what makes a team a
+    consolidation trade candidate.
+  </p>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th class="rank">#</th>
+          <th>Team</th>
+          <th>Record</th>
+          <th class="num">Lineup value</th>
+          <th class="num">Total value</th>
+          <th class="num">Depth×</th>
+          <th>Best asset</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% set top = rankings[0].lineup_value if rankings else 1 %}
+      {% for team in rankings %}
+        <tr>
+          <td class="rank">{{ team.rank }}</td>
+          <td>
+            <div class="team">{{ team.team }}</div>
+            <div class="bar" style="width: {{ (team.lineup_value / top * 100)|round(1) }}%"></div>
+            <details>
+              <summary>lineup</summary>
+              <div class="lineup">
+                {% for p in team.lineup %}
+                  <span><span class="slot">{{ p.slot }}</span>
+                  {{ p.name }} <span class="slot">{{ '{:,}'.format(p.score|int) }}</span></span>
+                {% endfor %}
+              </div>
+            </details>
+          </td>
+          <td>{{ team.record }}</td>
+          <td class="num">{{ '{:,}'.format(team.lineup_value|int) }}</td>
+          <td class="num">{{ '{:,}'.format(team.total_value|int) }}</td>
+          <td class="num">{{ team.depth_ratio }}</td>
+          <td>{{ team.best_player }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Recent moves</h2>
+  <div class="card">
+    {% if transactions %}
+      <table>
+        <thead><tr><th>Wk</th><th>Type</th><th>In</th><th>Out</th></tr></thead>
+        <tbody>
+        {% for t in transactions %}
+          <tr>
+            <td>{{ t.week }}</td>
+            <td><span class="pill">{{ t.type.replace('_', ' ') }}</span></td>
+            <td class="adds">
+              {% for a in t.adds %}{{ a.name }} <span class="slot">{{ a.position }} → {{ a.team }}</span>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}
+            </td>
+            <td class="drops">
+              {% for d in t.drops %}{{ d.name }} <span class="slot">{{ d.position }} ← {{ d.team }}</span>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty">No transactions synced yet.</p>
+    {% endif %}
+  </div>
+
+  <footer>
+    Synced {{ summary.synced_at }} · player values from FantasyCalc, league data from
+    the Sleeper API. Trade grading arrives in phases 2–3.
+  </footer>
+
+</div>
+</body>
+</html>
