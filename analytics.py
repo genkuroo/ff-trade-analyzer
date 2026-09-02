@@ -401,17 +401,19 @@ def player_report(conn, league_id: str, window_days: int = 7,
     return out
 
 
-def draft_report(conn, league_id: str) -> dict:
+def draft_report(conn, league_id: str, rows: list[dict] | None = None) -> dict:
     """How this league's draft compares to where the market had players going.
 
     Only players with both a real pick number and a real ADP can be compared,
     so kickers, defenses and undrafted free agents fall out -- correctly, since
     "undrafted" is not a draft position.
+
+    ``rows`` lets a caller that has already built a report hand it in rather
+    than pay for the join twice; the page shows both views of the same data.
     """
-    players = [
-        row for row in player_report(conn, league_id, rostered_only=False)
-        if row["adp_delta"] is not None
-    ]
+    if rows is None:
+        rows = player_report(conn, league_id, rostered_only=False)
+    players = [row for row in rows if row["adp_delta"] is not None]
     reaches = sorted(players, key=lambda r: r["adp_delta"])[:10]
     steals = sorted(players, key=lambda r: r["adp_delta"], reverse=True)[:10]
     return {

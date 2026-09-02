@@ -137,9 +137,14 @@ def players(league_id):
     owner = request.args.get("owner", type=int)
     scope = request.args.get("scope") or "rostered"
 
-    rows = analytics.player_report(
-        conn, league_id, window_days=window, rostered_only=(scope != "all")
-    )
+    # Built once against every valued player, then filtered in memory. The
+    # draft report needs the unfiltered set anyway, so computing it twice would
+    # pay for the same join twice.
+    everyone = analytics.player_report(conn, league_id, window_days=window,
+                                       rostered_only=False)
+    draft = analytics.draft_report(conn, league_id, rows=everyone)
+
+    rows = everyone if scope == "all" else [r for r in everyone if r["roster_id"]]
     if position:
         rows = [r for r in rows if r["position"] == position]
     if owner:
@@ -149,7 +154,7 @@ def players(league_id):
         "summary": analytics.league_summary(conn, league_id),
         "league_id": league_id,
         "rows": rows,
-        "draft": analytics.draft_report(conn, league_id),
+        "draft": draft,
         "teams": analytics.power_rankings(conn, league_id),
         "window": window,
         "position": position,
