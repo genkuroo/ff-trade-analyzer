@@ -169,9 +169,14 @@ They can disagree sharply, and the disagreement is informative: acquiring
 someone who raises your ceiling but never leaves your bench is a real upgrade
 worth zero actual points.
 
-Known limit, stated on the page rather than buried: the counterfactual does not
-model the waiver moves a manager would have made instead, so it is a floor on
-the pre-trade roster and reads slightly kindly to whoever traded talent away.
+Known limit, stated on the page rather than buried. The replay keeps every
+waiver pickup the manager really made — including ones made to cover the hole a
+trade created. So it hands the traded-away player back *and* keeps the
+replacement signed to replace him, when only one of the two ever existed.
+Rosters are capped, so that extra body should have been displacing a waiver
+claim. The bias is systematic and one-directional: the pre-trade roster comes
+out slightly too strong, so every trade reads a little **less** valuable than it
+really was.
 
 ### Valuing draft picks
 

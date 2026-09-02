@@ -37,12 +37,28 @@ bench. The two bases must not be mixed.
 Lineup efficiency (``actual_scored / actual_best``) is reported alongside, since
 it is genuinely interesting -- just not the trade's fault.
 
-What this deliberately does not model: the moves a manager would have made in
-the counterfactual world. Someone who trades away their only tight end would
-have picked *someone* up off waivers rather than starting nobody. So the
-counterfactual is a floor on the pre-trade roster, which biases slightly in
-favour of the side that traded talent away. That assumption is stated on
-screen rather than buried here.
+What this deliberately does not model: that a manager's *other* moves would
+have been different without the trade.
+
+The counterfactual roster is built from the roster as it really is today, minus
+what the trade brought in, plus what it sent away. That real roster already
+contains every waiver pickup made since -- including pickups made specifically
+to cover the hole the trade created. So the counterfactual hands back the
+traded-away player *and* keeps the replacement signed to replace him, when in
+reality the manager only ever had one of the two.
+
+Roster size is what makes this a real distortion rather than a quibble: rosters
+are capped, so a player given back in the counterfactual should be displacing a
+waiver claim, not sitting alongside it.
+
+The effect is systematic and it runs one way: the counterfactual roster comes
+out slightly too *strong*, so its best lineup scores slightly too high, so the
+measured swing is slightly too *low*. Every trade therefore looks a little less
+valuable than it was. It is a ceiling on the pre-trade roster, not a floor.
+
+(The opposite error -- a counterfactual so thin that a lineup slot cannot be
+filled at all, scoring zero and flattering the trade -- is possible in shallow
+leagues but did not occur once across 46 replayed weeks in the demo.)
 """
 
 from __future__ import annotations
