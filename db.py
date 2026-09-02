@@ -96,18 +96,45 @@ def init_db(conn=None):
     # Market values from FantasyCalc, snapshotted so a trade can be graded
     # against the values that were true *on the day it happened* rather than
     # today's -- the difference between "was this a good trade" and hindsight.
+    # Every column here is a *raw* observation, never a computed one. Deltas and
+    # percentage moves are derived at read time from two dated rows, because a
+    # stored delta silently goes stale the moment either endpoint is corrected,
+    # and because storing raw lets any window be asked for later -- 7-day,
+    # since-the-draft, since-a-trade -- without having decided up front.
     conn.execute(
         """CREATE TABLE IF NOT EXISTS player_values (
-            asof_date     TEXT NOT NULL,
-            config_key    TEXT NOT NULL,   -- e.g. dyn_1qb_10tm_ppr1.0
-            player_id     TEXT NOT NULL,   -- Sleeper id
-            value         INTEGER,
-            redraft_value INTEGER,
-            overall_rank  INTEGER,
-            position_rank INTEGER,
-            trend_30day   INTEGER,
-            tier          INTEGER,
+            asof_date        TEXT NOT NULL,
+            config_key       TEXT NOT NULL,   -- e.g. dyn_1qb_10tm_ppr1.0
+            player_id        TEXT NOT NULL,   -- Sleeper id
+            value            INTEGER,
+            redraft_value    INTEGER,
+            combined_value   INTEGER,   -- market's blended dynasty+redraft number
+            overall_rank     INTEGER,   -- doubles as the expected draft slot
+            position_rank    INTEGER,
+            trend_30day      INTEGER,   -- the market's own 30-day move
+            tier             INTEGER,
+            is_starter       INTEGER,   -- market says startable in this format
+            trade_frequency  REAL,      -- how often this player actually moves
+            roster_percent   REAL,      -- share of leagues where he is rostered
+            value_stddev_pct REAL,      -- disagreement in the market about him
+            search_rank      INTEGER,   -- Sleeper's own ordering, an independent
+                                        -- second opinion on draft position
             PRIMARY KEY (asof_date, config_key, player_id)
+        )"""
+    )
+
+    # Average draft position, dated because it moves all through the preseason.
+    # Separate from player_values because ADP is a property of the player and
+    # the format, not of a particular league's shape, so it would be duplicated
+    # across every config_key if it lived there.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS player_adp (
+            asof_date    TEXT NOT NULL,
+            season       TEXT NOT NULL,
+            player_id    TEXT NOT NULL,
+            adp          REAL,   -- overall, 1.0 = first pick off the board
+            position_adp REAL,   -- among players at his position
+            PRIMARY KEY (asof_date, season, player_id)
         )"""
     )
 
@@ -241,6 +268,22 @@ def init_db(conn=None):
             PRIMARY KEY (draft_id, pick_no)
         )"""
     )
+
+    # Columns added after the first release. ALTER TABLE ADD COLUMN is cheap and
+    # a duplicate-column error just means this database already has it.
+    for table, column, decl in (
+        ("player_values", "combined_value", "INTEGER"),
+        ("player_values", "is_starter", "INTEGER"),
+        ("player_values", "trade_frequency", "REAL"),
+        ("player_values", "roster_percent", "REAL"),
+        ("player_values", "value_stddev_pct", "REAL"),
+        ("player_values", "search_rank", "INTEGER"),
+        ("players", "search_rank", "INTEGER"),
+    ):
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        except sqlite3.OperationalError:
+            pass
 
     for stmt in (
         "CREATE INDEX IF NOT EXISTS idx_pw_player ON player_weeks (league_id, player_id, week)",

@@ -270,3 +270,151 @@ def league_summary(conn, league_id: str) -> dict:
         "synced_at": league["synced_at"],
         "value_date": latest_value_date(conn, config_key_for(league)),
     }
+
+
+# -- player-level reporting ------------------------------------------------
+#
+# Everything below derives its numbers at read time from raw dated rows. No
+# delta or percentage is ever stored: a stored delta goes stale the moment
+# either endpoint is revised, and keeping only raw observations means any
+# window can be asked for later without having committed to one up front.
+
+
+def value_asof(conn, config_key: str, on_or_before: str) -> str | None:
+    """The newest value snapshot at or before a date, so a gap doesn't break a
+    comparison -- a missing Tuesday falls back to Monday rather than to null."""
+    row = conn.execute(
+        """SELECT MAX(asof_date) AS d FROM player_values
+            WHERE config_key = ? AND asof_date <= ?""",
+        (config_key, on_or_before),
+    ).fetchone()
+    return row["d"] if row else None
+
+
+def _shift(date: str, days: int) -> str:
+    import datetime as dt
+    return (dt.date.fromisoformat(date) - dt.timedelta(days=days)).isoformat()
+
+
+def player_report(conn, league_id: str, window_days: int = 7,
+                  rostered_only: bool = True) -> list[dict]:
+    """Raw market observations for every player, alongside derived movement.
+
+    Each row carries the observed numbers (value, ranks, ADP, tier, how often
+    the player is actually traded) *and* the movement computed from them: the
+    change in value over the window, as points and as a percentage, plus the
+    gap between where the market said a player would go and where this league
+    actually took him.
+
+    That ADP gap is the interesting one. ADP says where people *do* draft a
+    player; overall rank says where they *should*. A player taken well after
+    his ADP was either a steal or a read the room disagreed with, and which one
+    it was only becomes clear later -- which is why both the raw pick number and
+    the raw ADP are kept rather than just the difference.
+    """
+    league = league_row(conn, league_id)
+    config_key = config_key_for(league)
+    latest = latest_value_date(conn, config_key)
+    if not latest:
+        return []
+    earlier = value_asof(conn, config_key, _shift(latest, window_days))
+
+    rows = conn.execute(
+        """SELECT p.player_id, p.name, p.position, p.team, p.age,
+                  now.value, now.combined_value, now.redraft_value,
+                  now.overall_rank, now.position_rank, now.tier,
+                  now.trend_30day, now.is_starter, now.trade_frequency,
+                  now.roster_percent, now.value_stddev_pct, now.search_rank,
+                  was.value        AS prior_value,
+                  was.overall_rank AS prior_overall_rank,
+                  adp.adp, adp.position_adp,
+                  dp.pick_no, dp.round AS draft_round,
+                  rs.roster_id, m.team_name, m.display_name
+             FROM player_values now
+             JOIN players p ON p.player_id = now.player_id
+             LEFT JOIN player_values was
+                    ON was.player_id = now.player_id
+                   AND was.config_key = now.config_key
+                   AND was.asof_date = ?
+             LEFT JOIN player_adp adp
+                    ON adp.player_id = now.player_id
+                   AND adp.asof_date = (SELECT MAX(asof_date) FROM player_adp)
+             LEFT JOIN draft_picks dp
+                    ON dp.player_id = now.player_id AND dp.league_id = ?
+             LEFT JOIN roster_slots rs
+                    ON rs.player_id = now.player_id AND rs.league_id = ?
+                   AND rs.snapshot_date =
+                       (SELECT MAX(snapshot_date) FROM roster_slots WHERE league_id = ?)
+             LEFT JOIN managers m
+                    ON m.league_id = ? AND m.roster_id = rs.roster_id
+            WHERE now.config_key = ? AND now.asof_date = ?""",
+        (earlier, league_id, league_id, league_id, league_id, config_key, latest),
+    ).fetchall()
+
+    out = []
+    for row in rows:
+        if rostered_only and row["roster_id"] is None:
+            continue
+        value = row["value"] or 0
+        prior = row["prior_value"]
+        delta = (value - prior) if prior is not None else None
+        out.append(
+            {
+                # --- raw observations -------------------------------------
+                "player_id": row["player_id"],
+                "name": row["name"],
+                "position": row["position"],
+                "team": row["team"],
+                "age": row["age"],
+                "value": value,
+                "prior_value": prior,
+                "combined_value": row["combined_value"],
+                "redraft_value": row["redraft_value"],
+                "overall_rank": row["overall_rank"],
+                "position_rank": row["position_rank"],
+                "search_rank": row["search_rank"],
+                "tier": row["tier"],
+                "adp": row["adp"],
+                "position_adp": row["position_adp"],
+                "actual_pick": row["pick_no"],
+                "draft_round": row["draft_round"],
+                "trend_30day": row["trend_30day"],
+                "trade_frequency": row["trade_frequency"],
+                "roster_percent": row["roster_percent"],
+                "value_stddev_pct": row["value_stddev_pct"],
+                "is_starter": bool(row["is_starter"]),
+                "owner": row["team_name"] or row["display_name"],
+                # --- derived ----------------------------------------------
+                "value_delta": delta,
+                "value_delta_pct": round(delta / prior, 4)
+                if delta is not None and prior else None,
+                "rank_delta": (row["prior_overall_rank"] - row["overall_rank"])
+                if row["prior_overall_rank"] and row["overall_rank"] else None,
+                # Positive = fell past his ADP (later than expected).
+                "adp_delta": round(row["pick_no"] - row["adp"], 1)
+                if row["pick_no"] and row["adp"] else None,
+            }
+        )
+
+    out.sort(key=lambda r: r["value"], reverse=True)
+    return out
+
+
+def draft_report(conn, league_id: str) -> dict:
+    """How this league's draft compares to where the market had players going.
+
+    Only players with both a real pick number and a real ADP can be compared,
+    so kickers, defenses and undrafted free agents fall out -- correctly, since
+    "undrafted" is not a draft position.
+    """
+    players = [
+        row for row in player_report(conn, league_id, rostered_only=False)
+        if row["adp_delta"] is not None
+    ]
+    reaches = sorted(players, key=lambda r: r["adp_delta"])[:10]
+    steals = sorted(players, key=lambda r: r["adp_delta"], reverse=True)[:10]
+    return {
+        "compared": len(players),
+        "reaches": reaches,   # taken earlier than the market said
+        "steals": steals,     # lasted longer than the market said
+    }

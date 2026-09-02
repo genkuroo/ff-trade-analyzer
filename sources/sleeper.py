@@ -114,6 +114,35 @@ def draft_picks(draft_id: str) -> list:
     return _get(f"/draft/{draft_id}/picks") or []
 
 
+def adp(season: str, week: int = 1) -> dict:
+    """Average draft position per player, from Sleeper's projections endpoint.
+
+    Undocumented but public, and the only free source of real ADP found -- the
+    market-value API returns its ``adp`` field empty, and rank is not the same
+    thing as ADP (rank says who is better, ADP says where people actually take
+    them, and the gap between those two is the interesting part).
+
+    ``adp_dd_ppr`` is dynasty-draft PPR, which happens to match Money Hole's
+    format exactly. Sleeper exposes no other variant here, so a redraft league
+    would be reading a dynasty ADP -- that is recorded in the field name rather
+    than papered over.
+
+    Players Sleeper considers undrafted carry a sentinel of 1000; those are
+    dropped rather than stored, since "undrafted" is not a draft position.
+    """
+    raw = _get(f"/projections/nfl/regular/{season}/{week}") or {}
+    out = {}
+    for player_id, row in raw.items():
+        overall = row.get("adp_dd_ppr")
+        if overall is None or overall >= 999:
+            continue
+        out[player_id] = {
+            "adp": overall,
+            "position_adp": row.get("pos_adp_dd_ppr"),
+        }
+    return out
+
+
 def user_leagues(username: str, season: str) -> list:
     """Every NFL league a username is in for a season -- used to discover ids."""
     user = _get(f"/user/{username}")

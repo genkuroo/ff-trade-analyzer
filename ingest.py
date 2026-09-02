@@ -50,21 +50,51 @@ def sync_players(conn) -> int:
     return len(catalog)
 
 
+def sync_adp(conn, season: str) -> int:
+    """Snapshot today's average draft position for every drafted player."""
+    rows = sleeper.adp(season)
+    asof = today()
+    conn.executemany(
+        """INSERT OR REPLACE INTO player_adp
+           (asof_date, season, player_id, adp, position_adp)
+           VALUES (?, ?, ?, ?, ?)""",
+        [
+            (asof, season, pid, row["adp"], row["position_adp"])
+            for pid, row in rows.items()
+        ],
+    )
+    conn.commit()
+    log.info("adp %s: %d players", season, len(rows))
+    return len(rows)
+
+
 def sync_values(conn, is_dynasty: bool, num_qbs: int, num_teams: int, ppr: float) -> tuple[int, int]:
     """Snapshot today's market values for one league shape."""
     key = values.config_key(is_dynasty, num_qbs, num_teams, ppr)
     players, picks = values.split(values.fetch(is_dynasty, num_qbs, num_teams, ppr))
     asof = today()
 
+    # Sleeper's own ordering, joined in as an independent second opinion on
+    # where a player belongs -- two disagreeing sources are more informative
+    # than one confident one.
+    search_ranks = {
+        pid: row.get("search_rank")
+        for pid, row in (sleeper.players() or {}).items()
+    }
     conn.executemany(
         """INSERT OR REPLACE INTO player_values
            (asof_date, config_key, player_id, value, redraft_value,
-            overall_rank, position_rank, trend_30day, tier)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            combined_value, overall_rank, position_rank, trend_30day, tier,
+            is_starter, trade_frequency, roster_percent, value_stddev_pct,
+            search_rank)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
                 asof, key, p["player_id"], p["value"], p["redraft_value"],
-                p["overall_rank"], p["position_rank"], p["trend_30day"], p["tier"],
+                p["combined_value"], p["overall_rank"], p["position_rank"],
+                p["trend_30day"], p["tier"], int(bool(p["is_starter"])),
+                p["trade_frequency"], p["roster_percent"], p["value_stddev_pct"],
+                search_ranks.get(p["player_id"]),
             )
             for p in players
         ],
@@ -149,6 +179,7 @@ def sync_league(
     counts["transactions"] = _sync_transactions(conn, league_id, through_week)
     counts["player_weeks"] = _sync_matchups(conn, league_id, through_week)
     counts["draft_picks"] = _sync_drafts(conn, league_id)
+    counts["adp"] = sync_adp(conn, meta.get("season") or "")
     conn.commit()
 
     counts["values"] = sync_values(conn, **shape) if with_values else None

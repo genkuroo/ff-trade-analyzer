@@ -19,6 +19,50 @@ This does both:
   the starting lineup, measured against what the roster would have scored had
   the trade never happened.
 
+## Where each number comes from
+
+One division of labour underpins everything:
+
+> **Sleeper says what happened. FantasyCalc says what it is worth.**
+
+Sleeper is the system of record for the league — rosters, trades, lineups,
+scores, actual draft picks, and (via an undocumented projections endpoint) real
+ADP. If Sleeper disagrees with anything else about a *fact*, Sleeper wins; it
+*is* the league.
+
+What Sleeper has no notion of is **value**. There is no trade calculator and no
+player worth anywhere in its API — 92 fields on the projections endpoint and not
+one of them is value-shaped. That gap is the only reason a second source exists.
+
+| | Sleeper | FantasyCalc |
+|---|---|---|
+| League settings, rosters, ownership | ✅ | |
+| Trades, waivers, FAAB, traded picks | ✅ | |
+| Weekly `starters` + `players_points` | ✅ | |
+| Actual draft picks | ✅ | |
+| **ADP** (`adp_dd_ppr`) | ✅ | ✗ (field exists, always null) |
+| Projected points | ✅ (unused so far) | |
+| **Player trade value** | ✗ none | ✅ |
+| **Draft pick value** | ✗ none | ✅ |
+| Value rank, tier, 30-day trend | | ✅ |
+| Trade frequency, roster %, volatility | | ✅ |
+
+FantasyCalc is never asked about a fact; Sleeper is never asked about worth.
+
+### Three different things called "rank"
+
+Conflating these produces confident nonsense, so they are stored separately:
+
+- **`position_rank`** (FantasyCalc) — trade-value order. "WR4" = 4th most
+  valuable WR to own.
+- **`position_adp`** (Sleeper) — draft order. Where WRs actually come off boards.
+- **production rank** (Sleeper `/stats`) — points actually scored. Not stored
+  yet; it needs games to have been played.
+
+The gap between the first two is the signal worth watching: value rank says who
+is *better*, ADP says who people *take*, and a player whose ADP badly trails his
+value rank is one the market hasn't caught up to.
+
 ## How it works
 
 Sleeper's read API is public, keyless, and generous. It gives up the league,

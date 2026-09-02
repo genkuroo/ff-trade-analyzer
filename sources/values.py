@@ -95,6 +95,11 @@ def split(rows: list) -> tuple[list, list]:
                     "position_rank": row.get("positionRank"),
                     "trend_30day": row.get("trend30Day"),
                     "tier": row.get("maybeTier"),
+                    "combined_value": row.get("combinedValue"),
+                    "is_starter": row.get("starter"),
+                    "trade_frequency": row.get("maybeTradeFrequency"),
+                    "roster_percent": row.get("maybeRosterPercent"),
+                    "value_stddev_pct": row.get("maybeMovingStandardDeviationPerc"),
                 }
             )
     return players, picks

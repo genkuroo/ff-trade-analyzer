@@ -34,6 +34,13 @@ on nothing in `app.py`, so the CLI and the web UI grade identically.
 `app.py` never calls an external API. Fetching belongs to `cli.py sync`, so a
 page load can never be slow, rate-limited, or broken by someone else's outage.
 
+**The source boundary — `sources/__init__.py` states it in full.** In one line:
+*Sleeper says what happened, FantasyCalc says what it is worth.* Sleeper is
+authoritative for every fact about the league and has no value metric of any
+kind; FantasyCalc supplies worth and is never consulted about a fact. Do not
+blur this — if a number could come from either, it is a fact and belongs to
+Sleeper.
+
 Two external sources, both free and keyless:
 
 - **Sleeper** (`sources/sleeper.py`) — league, rosters, transactions, weekly
@@ -80,6 +87,14 @@ Two external sources, both free and keyless:
   no "2-for-1 premium" constant to tune — do not add one.
 - Fit is scored against the *size of the deal*, not the size of the roster.
   Against roster value every trade looks like a rounding error.
+- **Three different things are called "rank"** and must not be conflated:
+  `position_rank` (FantasyCalc, trade value), `position_adp` (Sleeper, where
+  players are drafted), and production rank (Sleeper `/stats`, not stored yet).
+  Name any new one for its source.
+- **No derived value is ever stored** — no delta, no percentage. Only raw dated
+  observations go in the database; `analytics.player_report` computes movement
+  at read time. A stored delta goes stale when either endpoint is revised, and
+  raw rows let any window be asked for later.
 - Kickers and defenses come back unvalued from FantasyCalc — correct, they have
   no trade value. They are kept in the lineup at zero rather than dropped, so
   their slots don't read as unfillable.
