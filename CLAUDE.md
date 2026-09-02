@@ -81,6 +81,13 @@ Two external sources, both free and keyless:
   completed trade, it does not for a proposal. Passing the wrong value produces
   a fit delta of exactly zero, which looks like a plausible answer rather than
   a bug.
+- **`retro.py` has two swings and they must never be mixed.** `swing` is
+  actual-basis (real lineups kept, only vacated slots refilled) and is the only
+  thing a flipped game may be computed from. `roster_swing` is optimal-vs-
+  optimal. An earlier version computed only the optimal swing and subtracted it
+  from the actual score to find flips — which invented flips for players who
+  never left the bench. Zero-swing weeks must never produce a flip; there is a
+  check for this in the demo.
 - **Value and fit are reported separately and must stay that way.** Blending
   them hides the case the project exists to surface: a rebuild trade should win
   on value and lose on fit. Fit is also what handles consolidation, so there is

@@ -15,6 +15,7 @@ import analytics
 import config
 import db
 import grading
+import retro
 
 app = Flask(__name__)
 
@@ -64,9 +65,14 @@ def trades(league_id):
     if not analytics.league_row(conn, league_id):
         conn.close()
         abort(404)
+    trades = grading.completed_trades(conn, league_id)
+    # The retrospective is a separate pass: it needs games to have been played,
+    # and a league with no scoring yet should still show the instant grades.
+    for trade in trades:
+        trade["retro"] = retro.retrospective(conn, league_id, trade["txn_id"])
     context = {
         "summary": analytics.league_summary(conn, league_id),
-        "trades": grading.completed_trades(conn, league_id),
+        "trades": trades,
         "league_id": league_id,
     }
     conn.close()

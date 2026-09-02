@@ -91,8 +91,8 @@ between judging a decision and judging with hindsight.
 |---|---|---|
 | 1 | Sleeper + FantasyCalc ingest into SQLite | done |
 | 2 | Instant trade grade (value, roster fit, consolidation) | done |
-| 3 | Retrospective grade (counterfactual lineup replay) | next |
-| 4 | Power rankings with luck adjustment | |
+| 3 | Retrospective grade (counterfactual lineup replay) | done |
+| 4 | Power rankings with luck adjustment | next |
 | 5 | Flask dashboard | partial — rankings, trades, machine |
 | 6 | Discord slash commands in `sleeper-discord-bot` | |
 
@@ -128,6 +128,50 @@ The Waiver Wire
   Paid above market to improve the lineup now — defensible for a
   contender, expensive for anyone else.
 ```
+
+### The retrospective grade
+
+This is the part nobody else does. Every platform grades a trade the moment it
+happens and then never mentions it again.
+
+The naive version — adding up the points the traded players scored afterwards —
+is close to meaningless. A receiver who drops 25 on your bench earned you
+nothing, and if you traded away a running back you were never going to start,
+losing his production cost you zero.
+
+So the season gets **replayed instead**. For every week after the trade, the
+roster is rebuilt as it would have been, every lineup decision the manager
+actually made is kept, and only the slots the trade vacated are refilled from
+the pre-trade roster. That yields a score directly comparable to what really
+happened — which means a won or lost game can honestly be recomputed:
+
+```
+Prevent Defense                 VALUE C-  −530     ← graded at the time
+  + Tetairoa McMillan
+  − Chase Brown
+
+  since the trade (weeks 3–10)  +23.1 points, +2 wins
+    week 3: loss → win   scored 90.77 vs 89.95, without the trade 87.77
+    week 9: loss → win   scored 106.79 vs 103.88, without the trade 100.46
+```
+
+A **C-** at the time; two extra wins in reality. That gap is the whole point of
+the project.
+
+Two swings are reported, because conflating them produces nonsense:
+
+- **swing** — measured on what actually happened. The only basis on which a
+  head-to-head result can be recomputed.
+- **roster ceiling** — best-possible versus best-possible. How much better the
+  roster got, whether or not the manager used it.
+
+They can disagree sharply, and the disagreement is informative: acquiring
+someone who raises your ceiling but never leaves your bench is a real upgrade
+worth zero actual points.
+
+Known limit, stated on the page rather than buried: the counterfactual does not
+model the waiver moves a manager would have made instead, so it is a floor on
+the pre-trade roster and reads slightly kindly to whoever traded talent away.
 
 ### Valuing draft picks
 
@@ -217,6 +261,7 @@ db.py           schema + connection; player_weeks is the table that matters
 ingest.py       idempotent sync of a league end to end
 analytics.py    read-only computations, incl. the lineup solver
 grading.py      instant trade grading: value, fit, picks, FAAB
+retro.py        retrospective grading: counterfactual replay, flipped games
 app.py          Flask UI (never calls an API — reads the database only)
 cli.py          sync / values / trades / propose / discover / status
 config.py       league list, from FFTA_LEAGUES or config.json

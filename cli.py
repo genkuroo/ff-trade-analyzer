@@ -25,6 +25,7 @@ import config
 import db
 import grading
 import ingest
+import retro
 from sources import sleeper
 
 
@@ -128,7 +129,39 @@ def cmd_trades(args) -> None:
     for row in rows:
         result = grading.grade(conn, league_id, grading.trade_sides(conn, row["txn_id"]))
         _print_grade(result, f"=== week {row['week']} trade {row['txn_id']} ===")
+        _print_retro(retro.retrospective(conn, league_id, row["txn_id"]))
     conn.close()
+
+
+def _print_retro(report: dict) -> None:
+    """The ex-post half: what the trade actually did once games were played."""
+    weeks = report["weeks_measured"]
+    if not weeks:
+        print("\n  no games played since this trade yet")
+        return
+    print(f"\n  --- since the trade (weeks {weeks[0]}-{weeks[-1]}) ---")
+    for side in report["sides"].values():
+        print(
+            f"    {side['team']:<24} {side['total_swing']:+8.1f} pts   "
+            f"roster {side['total_roster_swing']:+7.1f}   {side['record_swing']}"
+        )
+        for flip in side["flips"]:
+            print(
+                f"      week {flip['week']}: {flip['from']} -> {flip['to']}  "
+                f"(scored {flip['actual']} vs {flip['opponent']}; "
+                f"without the trade {flip['without_trade']})"
+            )
+        for player in side["contributions"]["acquired"]:
+            print(
+                f"      + {player['name']:<22} {player['started_points']:>6.1f} started"
+                f"  {player['bench_points']:>6.1f} on the bench"
+            )
+        print(f"      {side['verdict']}")
+    if report["unresolved_picks"]:
+        picks = ", ".join(
+            f"{p['season']} rd {p['round']}" for p in report["unresolved_picks"]
+        )
+        print(f"    (picks not yet used, so ungradeable: {picks})")
 
 
 def cmd_propose(args) -> None:

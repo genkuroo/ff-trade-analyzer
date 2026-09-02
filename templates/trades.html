@@ -6,11 +6,17 @@
 {% block body %}
   <h2>Completed trades</h2>
   <p class="sub" style="margin-bottom:12px">
-    Each trade gets two grades, kept separate on purpose. <strong>Value</strong> is
-    what the market says you gained or gave up. <strong>Fit</strong> is how much of
-    that value actually reached your starting lineup. In a dynasty league they
-    routinely disagree, and that disagreement is the interesting part — a rebuild
-    trade <em>should</em> win on value and lose on fit.
+    Each trade is graded twice. <strong>At the time</strong>: <em>value</em> is what
+    the market says you gained or gave up, and <em>fit</em> is how much of it reached
+    your starting lineup. <strong>Afterwards</strong>: the season is replayed with the
+    trade undone, keeping every lineup decision you actually made and refilling only
+    the slots the trade vacated — so the swing is in points that really would have
+    been on your board, and a won or lost game can honestly be recomputed.
+  </p>
+  <p class="sub" style="margin-bottom:12px">
+    The counterfactual does not model waiver moves you would have made instead, so it
+    is a floor on the pre-trade roster and reads slightly kindly to whoever traded
+    talent away.
   </p>
 
   {% if trades %}
@@ -23,6 +29,71 @@
         <div class="sides">
           {% for s in t.sides.values() %}{{ g.side(s) }}{% endfor %}
         </div>
+
+        {% if t.retro.weeks_measured %}
+          <div class="retro">
+            <div class="retro-head">
+              How it actually worked out
+              <span class="slot">weeks {{ t.retro.weeks_measured[0] }}–{{ t.retro.weeks_measured[-1] }}</span>
+            </div>
+            <div class="sides">
+              {% for s in t.retro.sides.values() %}
+                <div class="side">
+                  <h3>{{ s.team }}</h3>
+                  <div class="grades">
+                    <span class="{{ 'pos' if s.total_swing > 0 else ('neg' if s.total_swing < 0 else '') }}"
+                          style="font-size:1.25rem;font-weight:700">
+                      {{ '{:+,.1f}'.format(s.total_swing) }}
+                    </span>
+                    <span class="slot">points, vs not making the trade</span>
+                  </div>
+                  <div class="slot" style="margin-bottom:6px">
+                    roster ceiling {{ '{:+,.1f}'.format(s.total_roster_swing) }} ·
+                    record {{ s.record_swing }}
+                  </div>
+
+                  {% for f in s.flips %}
+                    <div class="flip {{ 'flip-win' if f.to == 'win' else 'flip-loss' }}">
+                      <strong>Week {{ f.week }}: {{ f.from }} → {{ f.to }}</strong><br>
+                      scored {{ f.actual }} against {{ f.opponent }} —
+                      without the trade, {{ f.without_trade }}
+                    </div>
+                  {% endfor %}
+
+                  {% for p in s.contributions.acquired %}
+                    <div class="asset">
+                      <span class="adds">+ {{ p.name }} <span class="slot">{{ p.position }}</span></span>
+                      <span class="num">
+                        {{ '{:.1f}'.format(p.started_points) }}
+                        <span class="slot">started</span>
+                        {% if p.bench_points %}
+                          / {{ '{:.1f}'.format(p.bench_points) }} <span class="slot">benched</span>
+                        {% endif %}
+                      </span>
+                    </div>
+                  {% endfor %}
+                  {% for p in s.contributions.sent_away %}
+                    <div class="asset">
+                      <span class="drops">− {{ p.name }} <span class="slot">{{ p.position }}</span></span>
+                      <span class="num slot">gone</span>
+                    </div>
+                  {% endfor %}
+
+                  <p class="verdict">{{ s.verdict }}</p>
+                </div>
+              {% endfor %}
+            </div>
+            {% if t.retro.unresolved_picks %}
+              <p class="note">
+                Not gradeable yet: this trade included
+                {% for p in t.retro.unresolved_picks %}{{ p.season }} round {{ p.round }}{% if not loop.last %}, {% endif %}{% endfor %},
+                and a pick has no result until someone drafts with it.
+              </p>
+            {% endif %}
+          </div>
+        {% else %}
+          <p class="note">No games played since this trade yet — nothing to grade in hindsight.</p>
+        {% endif %}
       </div>
     {% endfor %}
   {% else %}

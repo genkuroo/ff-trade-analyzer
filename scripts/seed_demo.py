@@ -47,8 +47,19 @@ TEAMS = [
 ]
 
 ROSTER_POSITIONS = [
-    "QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "K", "DEF",
+    "QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX",
 ] + ["BN"] * 10
+
+# Ten weeks is enough for trades made in weeks 2-7 to have several weeks of
+# consequences each, which is what the retrospective grader needs to say
+# anything.
+WEEKS_PLAYED = 10
+
+# Managers do not set optimal lineups. Roughly one start in six is wrong, which
+# keeps lineup efficiency realistically in the high 80s and stops the
+# retrospective grade's "best possible" numbers from looking identical to what
+# was actually scored.
+LINEUP_ERROR_RATE = 1 / 6
 
 # Each trade is written to exercise a different shape the grader must handle.
 TRADES = [
@@ -92,6 +103,7 @@ def main() -> None:
     pool = _pool(conn, config_key, asof)
     rosters = _draft(conn, pool)
     _write_trades(conn, rosters)
+    _write_scoring(conn, rosters)
 
     conn.commit()
     trades = conn.execute(
@@ -169,6 +181,96 @@ def _draft(conn, pool: dict) -> dict:
                 (LEAGUE_ID, snapshot, roster_id, player["player_id"]),
             )
     return rosters
+
+
+def _weekly_points(value: int, position: str, rng: random.Random) -> float:
+    """A plausible weekly score for a player of a given market value.
+
+    Better players score more on average and are no more consistent for it, so
+    the noise scales with the mean. The point is not forecasting accuracy -- it
+    is that the retrospective grader is fed something with realistic spread,
+    since a replay against constant scores would prove nothing.
+    """
+    if position in ("K", "DEF") or not value:
+        base = 7.0
+    else:
+        base = 3.0 + 15.0 * (value / 11000.0) ** 0.5
+    score = rng.gauss(base, base * 0.45)
+    return max(0.0, round(score, 2))
+
+
+def _write_scoring(conn, rosters: dict) -> None:
+    """Generate a season of weekly results, and set imperfect lineups.
+
+    Starters are chosen with the same solver the grader uses, then a share of
+    them are deliberately swapped for a bench player at the same position --
+    otherwise every manager would be perfectly efficient and the difference
+    between "what they scored" and "the best their roster could score" would
+    collapse to zero, hiding the distinction the grader exists to make.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import analytics
+
+    rng = random.Random(SEED + 7)
+    slots = analytics.starting_slots(ROSTER_POSITIONS)
+    ids = sorted(rosters)
+
+    for week in range(1, WEEKS_PLAYED + 1):
+        scores = {}
+        for roster_id, players in rosters.items():
+            for p in players:
+                scores.setdefault(
+                    p["player_id"],
+                    _weekly_points(p["value"], p["position"], rng),
+                )
+
+        totals = {}
+        for roster_id, players in rosters.items():
+            candidates = [
+                {"player_id": p["player_id"], "position": p["position"],
+                 "score": scores[p["player_id"]]}
+                for p in players
+            ]
+            chosen, _ = analytics.best_lineup(candidates, slots)
+            started = {c["player_id"] for c in chosen}
+
+            # Introduce realistic lineup mistakes.
+            for pick in list(started):
+                if rng.random() >= LINEUP_ERROR_RATE:
+                    continue
+                pos = next(p["position"] for p in players if p["player_id"] == pick)
+                bench = [
+                    p["player_id"] for p in players
+                    if p["position"] == pos and p["player_id"] not in started
+                ]
+                if bench:
+                    started.discard(pick)
+                    started.add(rng.choice(bench))
+
+            total = round(sum(scores[pid] for pid in started), 2)
+            totals[roster_id] = total
+            for p in players:
+                conn.execute(
+                    """INSERT OR REPLACE INTO player_weeks
+                       (league_id, week, roster_id, player_id, points, started)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (LEAGUE_ID, week, roster_id, p["player_id"],
+                     scores[p["player_id"]], int(p["player_id"] in started)),
+                )
+
+        # Pair teams off differently each week so head-to-head results vary.
+        order = ids[:]
+        rng.shuffle(order)
+        for matchup_id, i in enumerate(range(0, len(order), 2), start=1):
+            for roster_id in order[i:i + 2]:
+                conn.execute(
+                    """INSERT OR REPLACE INTO team_weeks
+                       (league_id, week, roster_id, matchup_id, points)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (LEAGUE_ID, week, roster_id, matchup_id, totals[roster_id]),
+                )
+    print(f"  {WEEKS_PLAYED} weeks of scoring with imperfect lineups")
 
 
 def _pick_from(roster: list, spec: str) -> dict:
