@@ -4,6 +4,7 @@
     python cli.py sync --history       ...and every prior season of each
     python cli.py sync --no-values     league data only (the frequent poll)
     python cli.py values               snapshot market values only (daily)
+    python cli.py power                luck-adjusted power rankings
     python cli.py trades               grade every completed trade
     python cli.py propose --give X --get Y   grade a hypothetical trade
     python cli.py discover <username>  list a Sleeper user's leagues + ids
@@ -204,6 +205,36 @@ def cmd_discover(args) -> None:
         )
 
 
+def cmd_power(args) -> None:
+    """Rank by all-play record: how good a team has been, minus the schedule."""
+    conn = db.init_db()
+    league_id = _only_league(conn, args.league)
+    report = analytics.season_report(conn, league_id)
+    if not report:
+        print("No games played yet — nothing to rank on results.")
+        print("Roster value rankings are on the dashboard in the meantime.")
+        conn.close()
+        return
+
+    print(
+        f"{'#':>2} {'team':<24}{'record':>8}{'all-play':>10}{'exp W':>7}"
+        f"{'luck':>7}{'PF':>9}{'lineup':>8}{'swing':>8}"
+    )
+    for team in report:
+        print(
+            f"{team['rank']:>2} {team['team']:<24}{team['record']:>8}"
+            f"{team['all_play']:>10}{team['expected_wins']:>7.1f}"
+            f"{team['luck']:>+7.1f}{team['points_for']:>9.0f}"
+            f"{(team['lineup_efficiency'] or 0):>8.1%}{team['rank_gap']:>+8}"
+        )
+    print(
+        "\n  luck    = actual wins minus what the all-play record says they earned"
+        "\n  lineup  = share of their best possible score they actually started"
+        "\n  swing   = places the real standings flatter them by"
+    )
+    conn.close()
+
+
 def cmd_status(args) -> None:
     conn = db.init_db()
     rows = conn.execute(
@@ -261,6 +292,10 @@ def main() -> None:
     sub.add_parser("values", help="snapshot market values only").set_defaults(
         func=cmd_values
     )
+
+    p_power = sub.add_parser("power", help="luck-adjusted power rankings")
+    p_power.add_argument("--league", help="league id or name, if several are synced")
+    p_power.set_defaults(func=cmd_power)
 
     p_trades = sub.add_parser("trades", help="grade every completed trade")
     p_trades.add_argument("--league", help="league id or name, if several are synced")

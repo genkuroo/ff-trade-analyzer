@@ -13,7 +13,63 @@
     </p>
   {% endif %}
 
-  <h2>Power rankings</h2>
+  {% if season %}
+    <h2>Ranked by how they have actually played</h2>
+    <p class="sub" style="margin-bottom:12px">
+      A fantasy record is part team, part draw. <strong>All-play</strong> asks a
+      different question: each week, how many of the other nine teams would you have
+      beaten? Over a season that deletes the schedule, because everyone faces the
+      same opponents — all of them, every week. The gap between the wins a team has
+      and the wins their scoring earned is <strong>luck</strong>, in the literal
+      sense of results that had nothing to do with how they played.
+    </p>
+
+    <div class="card scroll">
+      <table class="dense">
+        <thead><tr>
+          <th class="rank">#</th><th>Team</th><th>Record</th>
+          <th class="num">All-play</th><th class="num">Earned W</th>
+          <th>Luck</th><th class="num">Points</th>
+          <th class="num">Lineup</th><th class="num">Swing</th>
+        </tr></thead>
+        <tbody>
+        {% set maxluck = season|map(attribute='luck')|map('abs')|max %}
+        {% for t in season %}
+          <tr>
+            <td class="rank">{{ t.rank }}</td>
+            <td><strong><a href="{{ url_for('team', league_id=league_id, roster_id=t.roster_id) }}"
+                           style="color:inherit">{{ t.team }}</a></strong></td>
+            <td>{{ t.record }}</td>
+            <td class="num">{{ t.all_play }}</td>
+            <td class="num">{{ '{:.1f}'.format(t.expected_wins) }}</td>
+            <td>
+              <div class="luckcell">
+                <div class="luck" title="{{ '{:+.1f}'.format(t.luck) }} wins vs what their scoring earned">
+                  {% set w = (t.luck|abs / (maxluck or 1) * 50)|round(1) %}
+                  {% if t.luck > 0 %}<i class="up" style="width:{{ w }}%"></i>
+                  {% elif t.luck < 0 %}<i class="down" style="width:{{ w }}%"></i>{% endif %}
+                </div>
+                <span>{{ '{:+.1f}'.format(t.luck) }}</span>
+              </div>
+            </td>
+            <td class="num">{{ '{:,.0f}'.format(t.points_for) }}</td>
+            <td class="num">{{ '{:.0%}'.format(t.lineup_efficiency or 0) }}</td>
+            <td class="num">{{ '{:+d}'.format(t.rank_gap) if t.rank_gap else '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      <span style="color:var(--luck-warm)">■</span> won more than their scoring earned ·
+      <span style="color:var(--luck-cool)">■</span> won less ·
+      <strong>Lineup</strong> is the share of their best possible score they actually
+      started — the one column a manager fully controls ·
+      <strong>Swing</strong> is how many places the real standings flatter them by.
+    </p>
+  {% endif %}
+
+  <h2>{{ 'Roster value, looking forward' if season else 'Power rankings' }}</h2>
   <p class="sub">
     Ranked by <strong>lineup value</strong> — the best legal starting lineup a team
     could field today, not the sum of everyone they own. The gap between lineup and

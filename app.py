@@ -51,6 +51,9 @@ def league(league_id):
     context = {
         "summary": analytics.league_summary(conn, league_id),
         "rankings": analytics.power_rankings(conn, league_id),
+        # Empty until games have been played, which is the correct answer in
+        # the preseason rather than a table of zeroes.
+        "season": analytics.season_report(conn, league_id),
         "transactions": analytics.recent_transactions(conn, league_id, limit=15),
         "leagues": analytics.all_leagues(conn),
         "league_id": league_id,

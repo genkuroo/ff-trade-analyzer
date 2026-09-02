@@ -92,8 +92,8 @@ between judging a decision and judging with hindsight.
 | 1 | Sleeper + FantasyCalc ingest into SQLite | done |
 | 2 | Instant trade grade (value, roster fit, consolidation) | done |
 | 3 | Retrospective grade (counterfactual lineup replay) | done |
-| 4 | Power rankings with luck adjustment | next |
-| 5 | Flask dashboard | partial — rankings, trades, machine |
+| 4 | Power rankings with luck adjustment | done |
+| 5 | Flask dashboard | partial — rankings, trades, machine, players |
 | 6 | Discord slash commands in `sleeper-discord-bot` | |
 
 Phase 5 landed early in skeleton form because the app is self-hosted: there has
@@ -243,6 +243,37 @@ further than this project's own daily snapshots.
 `/league/<id>/machine` grades a hypothetical before you offer it. Everything
 lives in the query string and nothing is written, so a graded trade is just a
 link you can paste into the league chat.
+
+### Luck-adjusted standings
+
+A fantasy record is part team, part draw. You can score the second-most points in
+the league most weeks and sit at 3-5 because you kept running into whoever went
+off. **All-play** asks a different question: each week, how many of the other
+teams would you have beaten? Over a season that deletes the schedule entirely,
+because everyone faces the same opponent set — all of them, every week.
+
+The gap between the wins a team has and the wins their scoring earned is **luck**,
+in the literal sense of results that had nothing to do with how they played.
+
+From the demo season, two teams with the *identical* all-play record:
+
+```
+Injury Report        6-4    all-play 39-51    luck +1.7
+Play Action Heroes   2-8    all-play 39-51    luck −2.3
+```
+
+Same scoring quality. Four games apart in the standings, entirely schedule.
+
+Reported alongside, deliberately unblended: **lineup efficiency** (points started
+over the most the roster could have scored — the one number a manager fully
+controls), **consistency** (week-to-week standard deviation), and the
+market-value ranking, which is forward-looking where the rest is backward-looking.
+
+The luck meter is a diverging bar on a warm/cool pair rather than red/green —
+luck is polarity, not virtue, and being unlucky is not a failure. The pair is
+validated for colour-blindness (CVD ΔE 27.9 protan, well above the 8 threshold)
+and the number is always printed next to the bar, so nothing rests on colour
+alone.
 
 ### Power rankings
 

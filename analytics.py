@@ -529,3 +529,194 @@ def all_time_roster(conn, league_id: str, roster_id: int) -> dict:
         "departed": [s for s in stints if not s["active"]],
         "total_held": len(stints),
     }
+
+
+# -- season performance ----------------------------------------------------
+
+
+def season_report(conn, league_id: str) -> list[dict]:
+    """Rank teams by how good they have actually been, not by their record.
+
+    A fantasy record is part team, part draw. You can score the second-most
+    points in the league every week and sit at 3-5 because you kept running
+    into whoever went off that week. The fix is the **all-play record**: for
+    each week, count how many of the other teams you would have beaten. Over a
+    season that removes the schedule entirely, because everyone plays the same
+    opponent set -- all of them, every week.
+
+    The gap between actual wins and all-play expected wins *is* luck, in the
+    literal sense of outcomes that had nothing to do with how the team played.
+
+    Three other things get reported next to it, deliberately unblended:
+
+      * **lineup efficiency** -- points actually started over the most the
+        roster could have scored. This is manager skill, and it is the one
+        number here a manager fully controls.
+      * **consistency** -- week-to-week standard deviation. A volatile team is
+        a worse favourite and a better underdog, which no single ranking
+        captures.
+      * **market value** -- the forward-looking view from the trade market. A
+        team can be playing above its roster and about to fall off.
+
+    Blending these into one score would hide exactly the disagreements that
+    make the table worth reading, so they stay in separate columns.
+    """
+    weeks = [
+        row["week"]
+        for row in conn.execute(
+            """SELECT DISTINCT week FROM team_weeks
+                WHERE league_id = ? AND points IS NOT NULL AND points > 0
+                ORDER BY week""",
+            (league_id,),
+        )
+    ]
+    if not weeks:
+        return []
+
+    league = league_row(conn, league_id)
+    slots = starting_slots(json.loads(league["roster_positions"]))
+    positions = {
+        row["player_id"]: row["position"]
+        for row in conn.execute("SELECT player_id, position FROM players")
+    }
+    managers = {
+        m["roster_id"]: m
+        for m in conn.execute(
+            "SELECT * FROM managers WHERE league_id = ?", (league_id,)
+        )
+    }
+
+    scores: dict[int, dict[int, float]] = {}
+    matchups: dict[int, dict[int, int]] = {}
+    for row in conn.execute(
+        """SELECT week, roster_id, matchup_id, points FROM team_weeks
+            WHERE league_id = ? AND points IS NOT NULL""",
+        (league_id,),
+    ):
+        scores.setdefault(row["week"], {})[row["roster_id"]] = row["points"] or 0.0
+        matchups.setdefault(row["week"], {})[row["roster_id"]] = row["matchup_id"]
+
+    optimal = _optimal_by_week(conn, league_id, weeks, positions, slots)
+
+    stats: dict[int, dict] = {}
+    for week in weeks:
+        week_scores = scores.get(week, {})
+        for roster_id, points in week_scores.items():
+            entry = stats.setdefault(
+                roster_id,
+                {"roster_id": roster_id, "scores": [], "optimal": 0.0,
+                 "all_play_w": 0, "all_play_l": 0, "wins": 0, "losses": 0,
+                 "ties": 0, "points_for": 0.0, "points_against": 0.0},
+            )
+            entry["scores"].append(points)
+            entry["points_for"] += points
+            entry["optimal"] += optimal.get((week, roster_id), 0.0)
+
+            # All-play: everyone else's score that week is an opponent.
+            for other_id, other in week_scores.items():
+                if other_id == roster_id:
+                    continue
+                if points > other:
+                    entry["all_play_w"] += 1
+                elif points < other:
+                    entry["all_play_l"] += 1
+
+            # The real head-to-head.
+            mine = matchups.get(week, {}).get(roster_id)
+            opponent = next(
+                (r for r, m in matchups.get(week, {}).items()
+                 if m == mine and r != roster_id),
+                None,
+            )
+            if opponent is not None:
+                against = week_scores.get(opponent, 0.0)
+                entry["points_against"] += against
+                if points > against:
+                    entry["wins"] += 1
+                elif points < against:
+                    entry["losses"] += 1
+                else:
+                    entry["ties"] += 1
+
+    ranked = []
+    value_by_roster = {t["roster_id"]: t for t in power_rankings(conn, league_id)}
+    for roster_id, entry in stats.items():
+        games = entry["wins"] + entry["losses"] + entry["ties"]
+        all_play_total = entry["all_play_w"] + entry["all_play_l"]
+        all_play_pct = (
+            entry["all_play_w"] / all_play_total if all_play_total else 0.0
+        )
+        expected_wins = round(all_play_pct * games, 2)
+        manager = managers.get(roster_id)
+        value = value_by_roster.get(roster_id, {})
+
+        ranked.append(
+            {
+                "roster_id": roster_id,
+                "team": (manager["team_name"] or manager["display_name"])
+                if manager else f"Roster {roster_id}",
+                "record": f"{entry['wins']}-{entry['losses']}"
+                + (f"-{entry['ties']}" if entry["ties"] else ""),
+                "wins": entry["wins"],
+                "games": games,
+                "points_for": round(entry["points_for"], 2),
+                "points_against": round(entry["points_against"], 2),
+                "avg_score": round(entry["points_for"] / len(entry["scores"]), 2),
+                "consistency": round(_stdev(entry["scores"]), 2),
+                "all_play": f"{entry['all_play_w']}-{entry['all_play_l']}",
+                "all_play_pct": round(all_play_pct, 4),
+                "expected_wins": expected_wins,
+                # Positive means they have won more than their scoring deserved.
+                "luck": round(entry["wins"] - expected_wins, 2),
+                "optimal_points": round(entry["optimal"], 2),
+                "lineup_efficiency": round(
+                    entry["points_for"] / entry["optimal"], 4
+                ) if entry["optimal"] else None,
+                "points_left_on_bench": round(
+                    entry["optimal"] - entry["points_for"], 2
+                ),
+                "lineup_value": value.get("lineup_value", 0),
+            }
+        )
+
+    ranked.sort(key=lambda t: t["all_play_pct"], reverse=True)
+    for position, team in enumerate(ranked, start=1):
+        team["rank"] = position
+        team["standings_rank"] = None
+    by_record = sorted(
+        ranked, key=lambda t: (t["wins"], t["points_for"]), reverse=True
+    )
+    for position, team in enumerate(by_record, start=1):
+        team["standings_rank"] = position
+        # Positive means the real standings flatter them: they sit higher in the
+        # table than their scoring earned. Negative means the schedule has been
+        # burying them.
+        team["rank_gap"] = team["rank"] - team["standings_rank"]
+    return ranked
+
+
+def _optimal_by_week(conn, league_id, weeks, positions, slots) -> dict:
+    """The most each roster could have scored each week, given its players."""
+    rosters: dict[tuple, list] = {}
+    for row in conn.execute(
+        """SELECT week, roster_id, player_id, points FROM player_weeks
+            WHERE league_id = ?""",
+        (league_id,),
+    ):
+        rosters.setdefault((row["week"], row["roster_id"]), []).append(
+            {"player_id": row["player_id"],
+             "position": positions.get(row["player_id"], ""),
+             "score": row["points"] or 0.0}
+        )
+    return {
+        key: best_lineup(candidates, slots)[1]
+        for key, candidates in rosters.items()
+        if key[0] in set(weeks)
+    }
+
+
+def _stdev(values) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = sum(values) / len(values)
+    return (sum((v - mean) ** 2 for v in values) / (len(values) - 1)) ** 0.5
