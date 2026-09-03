@@ -81,3 +81,19 @@ def test_the_machine_grades_from_query_parameters_alone(client):
     # to be enough to reproduce the grade.
     assert "Alpha Runner" in body and "Bravo Runner" in body
     assert "value" in body.lower()
+
+
+def test_the_machine_has_one_swappable_root_the_client_script_can_target(client):
+    """The live-update JS parses the fetched response for one element id and
+    replaces the page's matching element with it. If that id ever stops being
+    unique, or the form/result fall outside it, an interaction would silently
+    stop updating anything -- worth a direct assertion rather than only
+    catching it by clicking through the page."""
+    body = client.get(f"/league/{LEAGUE_ID}/machine?a=1&b=2&give=rb1&get=rb2").data.decode()
+    assert body.count('id="machine-app"') == 1
+    assert body.count('id="tradeform"') == 1
+    # The grade result must render *inside* the swappable root, or a live
+    # update would leave a stale grade sitting under a fresh, unrelated form.
+    app_start = body.index('id="machine-app"')
+    app_end = body.index("</script>")  # the controller script closes the block
+    assert body.index('class="slot">value<', app_start) < app_end

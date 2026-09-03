@@ -212,6 +212,13 @@
                 letter-spacing: .03em; padding: 1px 5px; border-radius: 4px;
                 margin-left: 5px; border: 1px solid var(--border);
                 color: var(--text-secondary); }
+    /* The trade machine swaps this in place on every interaction rather than
+       reloading; dim + freeze it while a request is in flight so a click
+       mid-fetch can't queue up against content that is about to change under
+       it, without a jarring blank flash. */
+    #machine-app.loading { opacity: .55; pointer-events: none;
+                           transition: opacity .12s ease; }
+    .pf-status { font-size: .8125rem; color: var(--muted); margin-left: 10px; }
     .raw { color: var(--text-primary); }
     .derived { font-variant-numeric: tabular-nums; }
     .note { font-size: .8125rem; color: var(--muted); padding: 0 16px 12px; }

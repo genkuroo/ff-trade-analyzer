@@ -14,211 +14,325 @@
     and the grade shows which projection it used.
   </p>
 
-  <form method="get" class="card" style="padding:16px">
-    {% set mine_team = teams|selectattr('roster_id', 'equalto', mine)|first %}
-    {% set their_team = teams|selectattr('roster_id', 'equalto', theirs)|first %}
-    <div class="picker" style="margin-bottom:12px">
-      <div>
-        <label class="slot" for="a">Your team</label>
-        <div class="team-cell" style="margin-top:4px">
-          {% if mine_team and mine_team.avatar %}
-            <img class="avatar" src="{{ mine_team.avatar }}" alt="" loading="lazy">
-          {% elif mine_team %}
-            <span class="avatar avatar-fallback avatar-c{{ mine_team.avatar_fallback.color_index }}">{{ mine_team.avatar_fallback.initial }}</span>
-          {% endif %}
-          <select name="a" id="a" onchange="this.form.submit()" style="width:100%">
-            {% for t in teams %}
-              <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == mine }}>{{ t.team }}</option>
-            {% endfor %}
-          </select>
+  <!-- Everything that changes on an interaction lives inside this one div. A
+       team switch, a checkbox, a pick, or a FAAB amount re-fetches this same
+       page and swaps just this subtree in, so nothing here ever causes a full
+       page reload -- no lost scroll position, no page flash. The <script>
+       below lives outside it deliberately: content inserted via DOMParser +
+       replaceWith never executes embedded <script> tags, so a controller that
+       needs to survive every swap has to sit outside the thing being swapped. -->
+  <div id="machine-app">
+    <form id="tradeform" method="get" class="card" style="padding:16px">
+      {% set mine_team = teams|selectattr('roster_id', 'equalto', mine)|first %}
+      {% set their_team = teams|selectattr('roster_id', 'equalto', theirs)|first %}
+      <div class="picker" style="margin-bottom:12px">
+        <div>
+          <label class="slot" for="a">Your team</label>
+          <div class="team-cell" style="margin-top:4px">
+            {% if mine_team and mine_team.avatar %}
+              <img class="avatar" src="{{ mine_team.avatar }}" alt="" loading="lazy">
+            {% elif mine_team %}
+              <span class="avatar avatar-fallback avatar-c{{ mine_team.avatar_fallback.color_index }}">{{ mine_team.avatar_fallback.initial }}</span>
+            {% endif %}
+            <select name="a" id="a" style="width:100%">
+              {% for t in teams %}
+                <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == mine }}>{{ t.team }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="slot" for="b">Their team</label>
+          <div class="team-cell" style="margin-top:4px">
+            {% if their_team and their_team.avatar %}
+              <img class="avatar" src="{{ their_team.avatar }}" alt="" loading="lazy">
+            {% elif their_team %}
+              <span class="avatar avatar-fallback avatar-c{{ their_team.avatar_fallback.color_index }}">{{ their_team.avatar_fallback.initial }}</span>
+            {% endif %}
+            <select name="b" id="b" style="width:100%">
+              {% for t in teams %}
+                <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == theirs }}>{{ t.team }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
       </div>
-      <div>
-        <label class="slot" for="b">Their team</label>
-        <div class="team-cell" style="margin-top:4px">
-          {% if their_team and their_team.avatar %}
-            <img class="avatar" src="{{ their_team.avatar }}" alt="" loading="lazy">
-          {% elif their_team %}
-            <span class="avatar avatar-fallback avatar-c{{ their_team.avatar_fallback.color_index }}">{{ their_team.avatar_fallback.initial }}</span>
-          {% endif %}
-          <select name="b" id="b" onchange="this.form.submit()" style="width:100%">
-            {% for t in teams %}
-              <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == theirs }}>{{ t.team }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-    </div>
 
-    <div class="picker">
-      <div>
-        <div class="slot" style="margin-bottom:4px">
-          You send <span class="pf-count" data-count="mine"></span>
-        </div>
-        <div class="pf-controls">
-          <input type="search" placeholder="Search players…" data-search="mine">
-          <select data-pos="mine">
-            <option value="">All positions</option>
-            {% for pos in board_mine|map(attribute='position')|unique|sort %}
-              <option value="{{ pos }}">{{ pos }}</option>
+      <div class="picker">
+        <div>
+          <div class="slot" style="margin-bottom:4px">
+            You send <span class="pf-count" data-count="mine"></span>
+          </div>
+          <div class="pf-controls">
+            <input type="search" placeholder="Search players…" data-search="mine">
+            <select data-pos="mine">
+              <option value="">All positions</option>
+              {% for pos in board_mine|map(attribute='position')|unique|sort %}
+                <option value="{{ pos }}">{{ pos }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="pickbox" data-list="mine">
+            {% for p in board_mine %}
+              <label class="pf-row" data-name="{{ p.name|lower }}" data-pos="{{ p.position }}">
+                <span>
+                  <input type="checkbox" name="give" value="{{ p.player_id }}"
+                         {{ 'checked' if p.player_id in give }}>
+                  {{ p.name }} <span class="slot">{{ p.position }} {{ p.team }}</span>
+                  {% if p.slot == 'taxi' %}<span class="stash-tag">taxi</span>
+                  {% elif p.slot == 'reserve' %}<span class="stash-tag">IR</span>{% endif %}
+                </span>
+                <span class="num">{{ '{:,}'.format(p.value) }}</span>
+              </label>
             {% endfor %}
-          </select>
+            <p class="pf-empty" data-empty="mine">No players match.</p>
+          </div>
         </div>
-        <div class="pickbox" data-list="mine">
-          {% for p in board_mine %}
-            <label class="pf-row" data-name="{{ p.name|lower }}" data-pos="{{ p.position }}">
+        <div>
+          <div class="slot" style="margin-bottom:4px">
+            You receive <span class="pf-count" data-count="theirs"></span>
+          </div>
+          <div class="pf-controls">
+            <input type="search" placeholder="Search players…" data-search="theirs">
+            <select data-pos="theirs">
+              <option value="">All positions</option>
+              {% for pos in board_theirs|map(attribute='position')|unique|sort %}
+                <option value="{{ pos }}">{{ pos }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="pickbox" data-list="theirs">
+            {% for p in board_theirs %}
+              <label class="pf-row" data-name="{{ p.name|lower }}" data-pos="{{ p.position }}">
+                <span>
+                  <input type="checkbox" name="get" value="{{ p.player_id }}"
+                         {{ 'checked' if p.player_id in get }}>
+                  {{ p.name }} <span class="slot">{{ p.position }} {{ p.team }}</span>
+                  {% if p.slot == 'taxi' %}<span class="stash-tag">taxi</span>
+                  {% elif p.slot == 'reserve' %}<span class="stash-tag">IR</span>{% endif %}
+                </span>
+                <span class="num">{{ '{:,}'.format(p.value) }}</span>
+              </label>
+            {% endfor %}
+            <p class="pf-empty" data-empty="theirs">No players match.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="picker" style="margin-top:14px">
+        <div>
+          <div class="slot" style="margin-bottom:4px">Picks you send</div>
+          {% for p in picks_mine %}
+            <label>
               <span>
-                <input type="checkbox" name="give" value="{{ p.player_id }}"
-                       {{ 'checked' if p.player_id in give }}>
-                {{ p.name }} <span class="slot">{{ p.position }} {{ p.team }}</span>
-                {% if p.slot == 'taxi' %}<span class="stash-tag">taxi</span>
-                {% elif p.slot == 'reserve' %}<span class="stash-tag">IR</span>{% endif %}
+                <input type="checkbox" name="givepick" value="{{ p.key }}"
+                       {{ 'checked' if p.key in give_picks }}>
+                {{ p.label }}
+                {% if p.origin %}<span class="slot">{{ p.origin }}</span>{% endif %}
               </span>
               <span class="num">{{ '{:,}'.format(p.value) }}</span>
             </label>
+          {% else %}
+            <p class="note" style="padding-left:0">No future picks on record.</p>
           {% endfor %}
-          <p class="pf-empty" data-empty="mine">No players match.</p>
         </div>
-      </div>
-      <div>
-        <div class="slot" style="margin-bottom:4px">
-          You receive <span class="pf-count" data-count="theirs"></span>
-        </div>
-        <div class="pf-controls">
-          <input type="search" placeholder="Search players…" data-search="theirs">
-          <select data-pos="theirs">
-            <option value="">All positions</option>
-            {% for pos in board_theirs|map(attribute='position')|unique|sort %}
-              <option value="{{ pos }}">{{ pos }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="pickbox" data-list="theirs">
-          {% for p in board_theirs %}
-            <label class="pf-row" data-name="{{ p.name|lower }}" data-pos="{{ p.position }}">
+        <div>
+          <div class="slot" style="margin-bottom:4px">Picks you receive</div>
+          {% for p in picks_theirs %}
+            <label>
               <span>
-                <input type="checkbox" name="get" value="{{ p.player_id }}"
-                       {{ 'checked' if p.player_id in get }}>
-                {{ p.name }} <span class="slot">{{ p.position }} {{ p.team }}</span>
-                {% if p.slot == 'taxi' %}<span class="stash-tag">taxi</span>
-                {% elif p.slot == 'reserve' %}<span class="stash-tag">IR</span>{% endif %}
+                <input type="checkbox" name="getpick" value="{{ p.key }}"
+                       {{ 'checked' if p.key in get_picks }}>
+                {{ p.label }}
+                {% if p.origin %}<span class="slot">{{ p.origin }}</span>{% endif %}
               </span>
               <span class="num">{{ '{:,}'.format(p.value) }}</span>
             </label>
+          {% else %}
+            <p class="note" style="padding-left:0">No future picks on record.</p>
           {% endfor %}
-          <p class="pf-empty" data-empty="theirs">No players match.</p>
         </div>
       </div>
-    </div>
 
-    <div class="picker" style="margin-top:14px">
-      <div>
-        <div class="slot" style="margin-bottom:4px">Picks you send</div>
-        {% for p in picks_mine %}
-          <label>
-            <span>
-              <input type="checkbox" name="givepick" value="{{ p.key }}"
-                     {{ 'checked' if p.key in give_picks }}>
-              {{ p.label }}
-              {% if p.origin %}<span class="slot">{{ p.origin }}</span>{% endif %}
-            </span>
-            <span class="num">{{ '{:,}'.format(p.value) }}</span>
-          </label>
-        {% else %}
-          <p class="note" style="padding-left:0">No future picks on record.</p>
-        {% endfor %}
+      <div class="picker" style="margin-top:14px">
+        <div>
+          <label class="slot" for="givefaab">FAAB you send ($)</label>
+          <input type="number" name="givefaab" id="givefaab" min="0" max="1000"
+                 value="{{ give_faab or '' }}" placeholder="0" style="width:100%">
+        </div>
+        <div>
+          <label class="slot" for="getfaab">FAAB you receive ($)</label>
+          <input type="number" name="getfaab" id="getfaab" min="0" max="1000"
+                 value="{{ get_faab or '' }}" placeholder="0" style="width:100%">
+        </div>
       </div>
-      <div>
-        <div class="slot" style="margin-bottom:4px">Picks you receive</div>
-        {% for p in picks_theirs %}
-          <label>
-            <span>
-              <input type="checkbox" name="getpick" value="{{ p.key }}"
-                     {{ 'checked' if p.key in get_picks }}>
-              {{ p.label }}
-              {% if p.origin %}<span class="slot">{{ p.origin }}</span>{% endif %}
-            </span>
-            <span class="num">{{ '{:,}'.format(p.value) }}</span>
-          </label>
-        {% else %}
-          <p class="note" style="padding-left:0">No future picks on record.</p>
-        {% endfor %}
-      </div>
-    </div>
 
-    <div class="picker" style="margin-top:14px">
-      <div>
-        <label class="slot" for="givefaab">FAAB you send ($)</label>
-        <input type="number" name="givefaab" id="givefaab" min="0" max="1000"
-               value="{{ give_faab or '' }}" placeholder="0" style="width:100%">
+      <div style="margin-top:14px">
+        <button type="submit">Grade this trade</button>
+        <span class="pf-status" data-status></span>
       </div>
-      <div>
-        <label class="slot" for="getfaab">FAAB you receive ($)</label>
-        <input type="number" name="getfaab" id="getfaab" min="0" max="1000"
-               value="{{ get_faab or '' }}" placeholder="0" style="width:100%">
+    </form>
+
+    {% if error %}
+      <div class="card"><p class="err">{{ error }}</p></div>
+    {% endif %}
+
+    {% if result %}
+      <h2>Grade</h2>
+      <div class="card">
+        <div class="sides">
+          {% for s in result.sides.values() %}{{ g.side(s) }}{% endfor %}
+        </div>
       </div>
-    </div>
-
-    <div style="margin-top:14px"><button type="submit">Grade this trade</button></div>
-  </form>
-
-  {% if error %}
-    <div class="card"><p class="err">{{ error }}</p></div>
-  {% endif %}
-
-  {% if result %}
-    <h2>Grade</h2>
-    <div class="card">
-      <div class="sides">
-        {% for s in result.sides.values() %}{{ g.side(s) }}{% endfor %}
-      </div>
-    </div>
-  {% endif %}
+    {% endif %}
+  </div>
 
   <script>
-    // Narrows each roster picker by name and position. Purely client-side --
-    // the whole roster is already in the page, and a real dynasty roster runs
-    // 20-25 players, so a search box beats scrolling a bare checkbox list.
-    // Filtering only hides rows; it never touches a checkbox's checked state,
-    // so a selection survives even after its row is filtered out of view.
+    // Live-updates the trade machine without a full page reload. A team
+    // switch, a checkbox, a pick, or a FAAB amount re-fetches this same route
+    // and swaps #machine-app's contents in place, so the URL stays a shareable
+    // link to the exact state on screen (history.replaceState keeps it current
+    // without piling up a back-button entry per checkbox click) while nothing
+    // about scroll position or the rest of the page is disturbed.
+    //
+    // This script sits outside #machine-app on purpose. Nodes inserted via
+    // DOMParser + replaceWith never execute their <script> tags -- that is a
+    // deliberate browser behaviour, not a bug -- so a controller that must
+    // outlive every swap cannot itself be inside the thing being swapped.
     (function () {
-      ["mine", "theirs"].forEach(function (side) {
-        const list = document.querySelector('[data-list="' + side + '"]');
-        if (!list) return;
-        const search = document.querySelector('[data-search="' + side + '"]');
-        const posSelect = document.querySelector('[data-pos="' + side + '"]');
-        const countEl = document.querySelector('[data-count="' + side + '"]');
-        const emptyEl = document.querySelector('[data-empty="' + side + '"]');
-        const rows = Array.from(list.querySelectorAll(".pf-row"));
+      const APP_ID = "machine-app";
+      let debounceTimer = null;
+      let inFlight = null; // AbortController for the current request, if any
 
-        function apply() {
-          const term = (search.value || "").trim().toLowerCase();
-          const pos = posSelect.value;
-          let visible = 0;
+      function initFilters(root) {
+        // Narrows each roster picker by name and position. Re-run after every
+        // swap, since the picker rows are brand new DOM nodes each time.
+        ["mine", "theirs"].forEach(function (side) {
+          const list = root.querySelector('[data-list="' + side + '"]');
+          if (!list) return;
+          const search = root.querySelector('[data-search="' + side + '"]');
+          const posSelect = root.querySelector('[data-pos="' + side + '"]');
+          const countEl = root.querySelector('[data-count="' + side + '"]');
+          const emptyEl = root.querySelector('[data-empty="' + side + '"]');
+          const rows = Array.from(list.querySelectorAll(".pf-row"));
+
+          function apply() {
+            const term = (search.value || "").trim().toLowerCase();
+            const pos = posSelect.value;
+            let visible = 0;
+            rows.forEach(function (row) {
+              const matchesName = !term || row.dataset.name.includes(term);
+              const matchesPos = !pos || row.dataset.pos === pos;
+              const show = matchesName && matchesPos;
+              row.classList.toggle("pf-hidden", !show);
+              if (show) visible += 1;
+            });
+            if (emptyEl) emptyEl.style.display = visible === 0 ? "block" : "none";
+          }
+
+          function updateCount() {
+            const checked = rows.filter(function (row) {
+              return row.querySelector("input[type=checkbox]").checked;
+            }).length;
+            if (countEl) countEl.textContent = checked ? "· " + checked + " selected" : "";
+          }
+
+          if (search) search.addEventListener("input", apply);
+          if (posSelect) posSelect.addEventListener("change", apply);
           rows.forEach(function (row) {
-            const matchesName = !term || row.dataset.name.includes(term);
-            const matchesPos = !pos || row.dataset.pos === pos;
-            const show = matchesName && matchesPos;
-            row.classList.toggle("pf-hidden", !show);
-            if (show) visible += 1;
+            row.querySelector("input[type=checkbox]").addEventListener("change", updateCount);
           });
-          if (emptyEl) emptyEl.style.display = visible === 0 ? "block" : "none";
-        }
-
-        function updateCount() {
-          const checked = rows.filter(function (row) {
-            return row.querySelector("input[type=checkbox]").checked;
-          }).length;
-          if (countEl) countEl.textContent = checked ? "· " + checked + " selected" : "";
-        }
-
-        if (search) search.addEventListener("input", apply);
-        if (posSelect) posSelect.addEventListener("change", apply);
-        rows.forEach(function (row) {
-          row.querySelector("input[type=checkbox]").addEventListener("change", updateCount);
+          updateCount();
         });
-        updateCount();
-      });
+      }
+
+      function bind() {
+        const app = document.getElementById(APP_ID);
+        if (!app) return;
+        const form = document.getElementById("tradeform");
+
+        app.querySelectorAll('select[name="a"], select[name="b"]').forEach(function (sel) {
+          sel.addEventListener("change", function () { scheduleRefresh(0); });
+        });
+        // give/get/givepick/getpick all use plain checkboxes, so one selector
+        // covers players and picks alike.
+        app.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+          cb.addEventListener("change", function () { scheduleRefresh(150); });
+        });
+        app.querySelectorAll('input[type="number"]').forEach(function (inp) {
+          inp.addEventListener("input", function () { scheduleRefresh(500); });
+        });
+        if (form) {
+          form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            scheduleRefresh(0);
+          });
+        }
+        initFilters(app);
+      }
+
+      function scheduleRefresh(delay) {
+        const active = document.activeElement;
+        const focusId = active && active.id ? active.id : null;
+        const selStart = active && "selectionStart" in active ? active.selectionStart : null;
+
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+          const form = document.getElementById("tradeform");
+          if (!form) return;
+          const params = new URLSearchParams([...new FormData(form)]);
+          const url = location.pathname + "?" + params.toString();
+          refresh(url, focusId, selStart);
+        }, delay);
+      }
+
+      function refresh(url, focusId, selStart) {
+        const status = document.querySelector("[data-status]");
+        const app = document.getElementById(APP_ID);
+
+        // A newer request supersedes whatever is already in flight. Aborting
+        // it (rather than just ignoring its response) is what stops a slow
+        // response for an earlier click from landing *after* a faster one for
+        // a later click and visually reverting the user's most recent action.
+        if (inFlight) inFlight.abort();
+        const controller = new AbortController();
+        inFlight = controller;
+
+        if (app) app.classList.add("loading");
+        if (status) status.textContent = "Updating…";
+
+        fetch(url, { signal: controller.signal })
+          .then(function (res) {
+            if (!res.ok) throw new Error("bad response: " + res.status);
+            return res.text();
+          })
+          .then(function (html) {
+            const doc = new DOMParser().parseFromString(html, "text/html");
+            const next = doc.getElementById(APP_ID);
+            if (!next) throw new Error("response had no " + APP_ID);
+            document.getElementById(APP_ID).replaceWith(next);
+            history.replaceState(null, "", url);
+            bind();
+            if (focusId) {
+              const el = document.getElementById(focusId);
+              if (el) {
+                el.focus();
+                if (selStart !== null && "setSelectionRange" in el) {
+                  try { el.setSelectionRange(selStart, selStart); } catch (e) { /* not a text field */ }
+                }
+              }
+            }
+          })
+          .catch(function (err) {
+            if (err.name === "AbortError") return; // superseded -- not a failure
+            // A real failure (offline, a 5xx, a browser too old for one of the
+            // APIs above) falls back to what this form already does with no
+            // JS at all: a normal GET navigation to the same URL.
+            window.location.href = url;
+          });
+      }
+
+      bind();
     })();
   </script>
 {% endblock %}
