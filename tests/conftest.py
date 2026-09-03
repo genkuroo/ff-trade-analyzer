@@ -184,3 +184,23 @@ def add_trade(conn, txn_id: str, week: int, moves: list, created_ms: int = 1000)
             (txn_id, LEAGUE_ID, pid, receiver),
         )
     conn.commit()
+
+
+def add_draft_pick(conn, round_no: int, pick_no: int, roster_id: int,
+                   player_id: str, draft_id: str = "test-draft") -> None:
+    conn.execute(
+        """INSERT OR REPLACE INTO draft_picks
+           (league_id, draft_id, season, round, pick_no, roster_id, player_id)
+           VALUES (?, ?, '2026', ?, ?, ?, ?)""",
+        (LEAGUE_ID, draft_id, round_no, pick_no, roster_id, player_id),
+    )
+    conn.commit()
+
+
+def add_adp(conn, player_id: str, adp: float, position_adp: float | None = None) -> None:
+    conn.execute(
+        """INSERT OR REPLACE INTO player_adp (asof_date, season, player_id, adp, position_adp)
+           VALUES (?, '2026', ?, ?, ?)""",
+        (ASOF, player_id, adp, position_adp),
+    )
+    conn.commit()

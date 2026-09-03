@@ -33,6 +33,11 @@
            font-family: var(--font); line-height: 1.5;
            -webkit-font-smoothing: antialiased; }
     .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 64px; }
+    /* The draft board is a genuinely wide page -- ten team columns of real
+       content, not prose -- so it gets more room than the rest of the app's
+       reading-width pages. .draftboard's own overflow-x is still there as a
+       fallback on a narrower window. */
+    .wrap.wrap-wide { max-width: 1600px; }
     header { display: flex; align-items: flex-start; justify-content: space-between;
              gap: 16px; flex-wrap: wrap; padding: 30px 0 22px;
              border-bottom: 1px solid var(--gridline); margin-bottom: 4px; }
@@ -212,6 +217,60 @@
                 letter-spacing: .03em; padding: 1px 5px; border-radius: 4px;
                 margin-left: 5px; border: 1px solid var(--border);
                 color: var(--text-secondary); }
+
+    /* Position palette for the draft board: six fixed hues, validated for
+       colour-blind and normal-vision separation in both themes (CVD dE 17.6
+       protan / 13.0 deutan worst-adjacent light/dark; the magenta's contrast
+       WARN against the light surface is why every cell also carries the
+       position as text -- colour is never the only signal here). */
+    :root {
+      --pos-qb: #e87ba4; --pos-rb: #008300; --pos-wr: #2a78d6;
+      --pos-te: #eb6834; --pos-k: #4a3aa7; --pos-def: #e34948;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --pos-qb: #d55181; --pos-rb: #008300; --pos-wr: #3987e5;
+        --pos-te: #d95926; --pos-k: #9085e9; --pos-def: #e66767;
+      }
+    }
+    :root[data-theme="dark"] {
+      --pos-qb: #d55181; --pos-rb: #008300; --pos-wr: #3987e5;
+      --pos-te: #d95926; --pos-k: #9085e9; --pos-def: #e66767;
+    }
+
+    .draftboard { overflow-x: auto; }
+    .draftgrid { display: grid; gap: 5px; padding: 14px; min-width: max-content; }
+    .draftcol-head { display: flex; flex-direction: column; align-items: center;
+                     gap: 6px; padding-bottom: 8px; text-align: center;
+                     max-width: 116px; }
+    .draftcol-head .team-name { font-size: .75rem; font-weight: 600;
+                                overflow: hidden; text-overflow: ellipsis;
+                                white-space: nowrap; max-width: 100%; }
+    .pick { width: 116px; border-radius: 8px; padding: 6px 7px;
+           border: 1px solid var(--border); background: var(--surface);
+           position: relative; }
+    .pick-no { font-size: .625rem; color: var(--muted);
+              font-variant-numeric: tabular-nums; }
+    .pick-body { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+    .pick-headshot { width: 30px; height: 30px; border-radius: 50%;
+                     object-fit: cover; flex-shrink: 0; background: var(--raised);
+                     border: 1px solid var(--border); }
+    .pick-name { font-size: .75rem; font-weight: 600; line-height: 1.2;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pick-meta { font-size: .625rem; color: var(--muted); }
+    .pick-pos { display: inline-block; font-size: .5625rem; font-weight: 700;
+               color: #fff; padding: 1px 4px; border-radius: 3px;
+               letter-spacing: .02em; }
+    .pick-pos.qb  { background: var(--pos-qb); }
+    .pick-pos.rb  { background: var(--pos-rb); }
+    .pick-pos.wr  { background: var(--pos-wr); }
+    .pick-pos.te  { background: var(--pos-te); }
+    .pick-pos.k   { background: var(--pos-k); }
+    .pick-pos.def { background: var(--pos-def); }
+    .pick-delta { position: absolute; top: 5px; right: 6px; font-size: .625rem;
+                 font-weight: 700; font-variant-numeric: tabular-nums; }
+    .roundlabel { display: flex; align-items: center; justify-content: center;
+                 font-size: .6875rem; color: var(--muted); font-weight: 600; }
     /* The trade machine swaps this in place on every interaction rather than
        reloading; dim + freeze it while a request is in flight so a click
        mid-fetch can't queue up against content that is about to change under
@@ -248,7 +307,7 @@
   </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap{{ ' wrap-wide' if page == 'draft' else '' }}">
 
   <header>
     <div>
@@ -287,6 +346,8 @@
        class="{{ 'on' if page == 'machine' }}">Trade machine</a>
     <a href="{{ url_for('players', league_id=league_id) }}"
        class="{{ 'on' if page == 'players' }}">Players</a>
+    <a href="{{ url_for('draft', league_id=league_id) }}"
+       class="{{ 'on' if page == 'draft' }}">Draft</a>
   </nav>
 
   {% block body %}{% endblock %}

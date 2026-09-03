@@ -57,6 +57,15 @@ def avatar_url(avatar_id: str | None, size: str = "thumb") -> str | None:
     return f"https://sleepercdn.com/{path}/{avatar_id}"
 
 
+def headshot_url(player_id: str | None) -> str | None:
+    """Sleeper's NFL player headshot CDN path -- a different path shape than
+    a manager avatar, and a different id space (player_id, not avatar_id), so
+    it gets its own function rather than overloading avatar_url."""
+    if not player_id:
+        return None
+    return f"https://sleepercdn.com/content/nfl/players/thumb/{player_id}.jpg"
+
+
 # How many colours the initial-circle fallback rotates through. Fixed and
 # small on purpose -- the CSS defines exactly this many --avatar-N tokens, one
 # set for light mode and one for dark, in the same style as every other themed
@@ -1017,3 +1026,167 @@ def bar_geometry(series: list[dict], x_key: str, y_key: str,
         )
     return {"bars": bars, "high": high, "width": width, "height": height,
             "pad": pad, "empty": False}
+
+
+# -- draft board -------------------------------------------------------
+#
+# The draft grid, plus the one metric it can honestly carry before a season
+# has been played: how each pick compares to where the market says that
+# player should have gone. A true retrospective -- who actually got the best
+# players out of their draft -- needs real weekly scoring and is a separate,
+# later pass; see draft_team_summary's ``retrospective_available`` flag.
+
+
+def draft_board(conn, league_id: str) -> dict:
+    """Every pick, arranged the way Sleeper's own board shows it: one column
+    per team in draft-slot order, one row per round.
+
+    Sleeper does not persist draft slot on a pick, or a slot-to-roster mapping
+    -- only round, pick number and who made the pick. Round 1 already has
+    exactly one pick per team, in slot order by construction, so it is used to
+    recover the column order rather than adding a column and a migration for
+    data the picks already imply.
+    """
+    league = league_row(conn, league_id)
+    config_key = config_key_for(league)
+    asof = latest_value_date(conn, config_key)
+    latest_adp = conn.execute(
+        "SELECT MAX(asof_date) AS d FROM player_adp"
+    ).fetchone()["d"]
+
+    managers = {
+        m["roster_id"]: m
+        for m in conn.execute(
+            "SELECT * FROM managers WHERE league_id = ?", (league_id,)
+        )
+    }
+
+    rows = conn.execute(
+        """SELECT dp.round, dp.pick_no, dp.roster_id, dp.player_id,
+                  p.name, p.position, p.team AS nfl_team,
+                  COALESCE(pv.value, 0) AS value,
+                  pv.tier, pv.position_rank,
+                  adp.adp
+             FROM draft_picks dp
+             LEFT JOIN players p ON p.player_id = dp.player_id
+             LEFT JOIN player_values pv ON pv.player_id = dp.player_id
+                   AND pv.config_key = ? AND pv.asof_date = ?
+             LEFT JOIN player_adp adp ON adp.player_id = dp.player_id
+                   AND adp.asof_date = ?
+            WHERE dp.league_id = ?
+            ORDER BY dp.round, dp.pick_no""",
+        (config_key, asof, latest_adp, league_id),
+    ).fetchall()
+    if not rows:
+        return {"rounds": [], "columns": [], "asof": asof}
+
+    column_order = [
+        r["roster_id"] for r in rows if r["round"] == rows[0]["round"]
+    ]
+    # Fall back to draft order of first appearance if round 1 is somehow
+    # incomplete (a partial or still-drafting board), rather than crash.
+    if len(column_order) < len({r["roster_id"] for r in rows}):
+        seen = []
+        for r in rows:
+            if r["roster_id"] not in seen:
+                seen.append(r["roster_id"])
+        column_order = seen
+
+    columns = []
+    for roster_id in column_order:
+        manager = managers.get(roster_id)
+        columns.append(
+            {
+                "roster_id": roster_id,
+                "team": (manager["team_name"] or manager["display_name"])
+                if manager else f"Roster {roster_id}",
+                "avatar": avatar_url(manager["avatar_id"]) if manager else None,
+                "avatar_fallback": avatar_fallback(
+                    (manager["team_name"] or manager["display_name"]) if manager else "?",
+                    roster_id,
+                ),
+            }
+        )
+    column_index = {rid: i for i, rid in enumerate(column_order)}
+
+    by_round: dict[int, list] = {}
+    for r in rows:
+        pick = {
+            "round": r["round"],
+            "pick_no": r["pick_no"],
+            "roster_id": r["roster_id"],
+            "column": column_index.get(r["roster_id"], 0),
+            "player_id": r["player_id"],
+            "name": r["name"] or "—",
+            "position": r["position"] or "",
+            "nfl_team": r["nfl_team"] or "",
+            # A team defense's "player_id" is its team abbreviation (e.g.
+            # "PIT"), not a real Sleeper player id, and has no photo behind it
+            # -- the CDN 403s rather than 404s, so this is checked by position
+            # rather than by trying the request and handling a broken image.
+            "headshot": headshot_url(r["player_id"]) if r["position"] != "DEF" else None,
+            "value": r["value"],
+            "tier": r["tier"],
+            "position_rank": r["position_rank"],
+            "adp": r["adp"],
+            "adp_delta": round(r["pick_no"] - r["adp"], 1)
+            if r["adp"] else None,
+        }
+        by_round.setdefault(r["round"], [None] * len(column_order))
+        if pick["column"] < len(by_round[r["round"]]):
+            by_round[r["round"]][pick["column"]] = pick
+
+    rounds = [
+        {"round": rnd, "picks": by_round[rnd]}
+        for rnd in sorted(by_round)
+    ]
+    return {"rounds": rounds, "columns": columns, "asof": asof}
+
+
+def draft_team_summary(conn, league_id: str) -> list[dict]:
+    """Per team: how their draft looks against the market, as of today.
+
+    ``value_delta_sum`` sums pick_no-vs-ADP across every pick as the single
+    honest signal available pre-season -- simple and transparent, at the cost
+    of treating a late-round reach the same as an early-round one even though
+    the real dollars at stake differ a great deal by that point in a draft.
+    That is a real limitation, not hidden: this is a *pick-accuracy* summary,
+    not a value-weighted grade, and it says so on the page.
+    """
+    board = draft_board(conn, league_id)
+    by_column: dict[int, list] = {c["roster_id"]: [] for c in board["columns"]}
+    for rnd in board["rounds"]:
+        for pick in rnd["picks"]:
+            if pick and pick["roster_id"] in by_column:
+                by_column[pick["roster_id"]].append(pick)
+
+    summaries = []
+    for column in board["columns"]:
+        picks = by_column.get(column["roster_id"], [])
+        graded = [p for p in picks if p["adp_delta"] is not None]
+        best = max(graded, key=lambda p: p["adp_delta"], default=None)
+        worst = min(graded, key=lambda p: p["adp_delta"], default=None)
+        delta_sum = round(sum(p["adp_delta"] for p in graded), 1) if graded else None
+        summaries.append(
+            {
+                **column,
+                "picks": len(picks),
+                "graded_picks": len(graded),
+                "adp_delta_sum": delta_sum,
+                # The sum grows with a 23-round draft and gets noisy in the
+                # deep rounds where ADP itself is thin; the per-pick average is
+                # what actually compares fairly across teams and rounds count,
+                # and reads as a normal-sized number rather than a three-digit
+                # one that looks more dramatic than it is.
+                "adp_delta_avg": round(delta_sum / len(graded), 1) if graded else None,
+                "best_pick": best,
+                "worst_pick": worst,
+            }
+        )
+    summaries.sort(
+        key=lambda s: s["adp_delta_avg"] if s["adp_delta_avg"] is not None else -1e9,
+        reverse=True,
+    )
+    for i, s in enumerate(summaries, start=1):
+        s["rank"] = i
+    return summaries

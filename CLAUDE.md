@@ -111,6 +111,19 @@ Two external sources, both free and keyless:
 - Kickers and defenses come back unvalued from FantasyCalc — correct, they have
   no trade value. They are kept in the lineup at zero rather than dropped, so
   their slots don't read as unfillable.
+- **The draft board's column order is derived from round 1, not stored.**
+  Sleeper never persists a pick's draft slot or a slot-to-roster mapping, only
+  who made each pick. Round 1 has exactly one pick per team in slot order by
+  construction, so `draft_board` reads that instead of adding a column for data
+  the picks already imply. A snake draft's round 2 must land in the *same*
+  column as round 1 for that team — there is a test for this specifically.
+- **A team defense's `player_id` is a team abbreviation** (e.g. `"PIT"`), not a
+  real Sleeper player id, and has no headshot behind it — the CDN returns 403,
+  not 404. `draft_board` suppresses the headshot by position rather than
+  showing a broken image; do not remove that check to "simplify" it.
+- **Nothing gets blended into a composite score, anywhere,** including the
+  draft grade. It ranks by average pick-vs-ADP, not a single fabricated
+  "letter grade" — matching the same restraint as value/fit and all-play/luck.
 
 ## Tests
 

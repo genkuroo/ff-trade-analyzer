@@ -239,6 +239,34 @@ def team(league_id, roster_id):
     return render_template("team.html", **context)
 
 
+@app.route("/league/<league_id>/draft")
+def draft(league_id):
+    """The startup/rookie draft, graded against the market as it stands today.
+
+    This is the "instant" half of a draft grade, same idea as the trade
+    machine's instant grade: how each pick compares to ADP right now. The
+    retrospective half -- who actually got the best players -- needs a season
+    of real scoring and cannot exist yet; the page says so rather than
+    guessing at it.
+    """
+    conn = db.connect()
+    if not analytics.league_row(conn, league_id):
+        conn.close()
+        abort(404)
+    board = analytics.draft_board(conn, league_id)
+    if not board["rounds"]:
+        conn.close()
+        abort(404)
+    context = {
+        "summary": analytics.league_summary(conn, league_id),
+        "league_id": league_id,
+        "board": board,
+        "summary_rows": analytics.draft_team_summary(conn, league_id),
+    }
+    conn.close()
+    return render_template("draft.html", **context)
+
+
 @app.route("/league/<league_id>/player/<player_id>")
 def player(league_id, player_id):
     conn = db.connect()

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% set page = 'draft' %}
+{% block title %}Draft — {{ summary.name }}{% endblock %}
+
+{% macro pos_class(pos) %}{{ pos|lower if pos in ('QB','RB','WR','TE','K','DEF') else '' }}{% endmacro %}
+
+{% block body %}
+  <h2>Draft board</h2>
+  <p class="sub" style="margin-bottom:4px">
+    Every pick, graded against the market as it stands today. The number in the
+    corner of each card is <strong>pick minus ADP</strong> — negative (red) means
+    the team reached for him ahead of where the market drafts him; positive
+    (green) means he lasted and they got him later than expected. Hover a card
+    for the exact numbers.
+  </p>
+  <p class="sub" style="margin-bottom:12px">
+    This is the <strong>instant</strong> read, the same idea as the trade
+    machine's instant grade — it says nothing about who actually ended up with
+    the better players, because that needs a season of real scoring. A
+    retrospective pass — who got the best players out of their draft — arrives
+    once games have been played; for now this is recorded as the pre-season
+    baseline to compare against later.
+  </p>
+
+  <div class="card draftboard">
+    <div class="draftgrid" style="grid-template-columns: 40px repeat({{ board.columns|length }}, 128px);">
+      <div></div>
+      {% for col in board.columns %}
+        <div class="draftcol-head">
+          {% if col.avatar %}
+            <img class="avatar-lg" src="{{ col.avatar }}" alt="" loading="lazy">
+          {% else %}
+            <span class="avatar-lg avatar-fallback avatar-c{{ col.avatar_fallback.color_index }}">{{ col.avatar_fallback.initial }}</span>
+          {% endif %}
+          <a class="team-name" href="{{ url_for('team', league_id=league_id, roster_id=col.roster_id) }}">{{ col.team }}</a>
+        </div>
+      {% endfor %}
+
+      {% for rnd in board.rounds %}
+        <div class="roundlabel">{{ rnd.round }}</div>
+        {% for p in rnd.picks %}
+          {% if p %}
+            <div class="pick"
+                 title="{{ p.name }} — pick {{ p.round }}.{{ '%02d'|format(p.pick_no - (p.round - 1) * board.columns|length) }} (overall {{ p.pick_no }}){% if p.adp %}, ADP {{ '%.1f'|format(p.adp) }}{% endif %}">
+              <div class="pick-no">{{ p.round }}.{{ '%02d'|format(p.pick_no - (p.round - 1) * board.columns|length) }}</div>
+              <div class="pick-body">
+                {% if p.headshot %}
+                  <img class="pick-headshot" src="{{ p.headshot }}" alt="" loading="lazy">
+                {% endif %}
+                <div style="min-width:0">
+                  <a href="{{ url_for('player', league_id=league_id, player_id=p.player_id) }}"
+                     class="pick-name" style="color:inherit;display:block">{{ p.name }}</a>
+                  <span class="pick-pos {{ pos_class(p.position) }}">{{ p.position }}</span>
+                  <span class="pick-meta">{{ p.nfl_team }}</span>
+                </div>
+              </div>
+              {% if p.adp_delta is not none %}
+                <span class="pick-delta {{ 'pos' if p.adp_delta > 0 else ('neg' if p.adp_delta < 0 else '') }}">
+                  {{ '{:+.0f}'.format(p.adp_delta) }}
+                </span>
+              {% endif %}
+            </div>
+          {% else %}
+            <div class="pick"></div>
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+  <p class="note">Values and ADP as of {{ board.asof or 'no snapshot yet' }}.</p>
+
+  <h2>How each team drafted</h2>
+  <p class="sub" style="margin-bottom:12px">
+    Ranked by <strong>average pick-vs-ADP</strong>, not the raw total — a
+    23-round draft racks up a big total on volume alone, and the average is
+    what actually compares fairly across teams. This is a
+    <strong>pick-accuracy</strong> summary, not a value-weighted one: a
+    late-round steal counts the same as an early-round one here, even though
+    the real value gap between them is usually much smaller by round twenty.
+  </p>
+
+  <div class="card">
+    <table class="dense">
+      <thead>
+        <tr>
+          <th class="rank">#</th><th>Team</th>
+          <th class="num">Avg pick−ADP</th><th class="num">Total</th>
+          <th>Best pick</th><th>Worst pick</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for s in summary_rows %}
+        <tr>
+          <td class="rank">{{ s.rank }}</td>
+          <td>
+            <div class="team-cell">
+              {% if s.avatar %}
+                <img class="avatar" src="{{ s.avatar }}" alt="" loading="lazy">
+              {% else %}
+                <span class="avatar avatar-fallback avatar-c{{ s.avatar_fallback.color_index }}">{{ s.avatar_fallback.initial }}</span>
+              {% endif %}
+              <a href="{{ url_for('team', league_id=league_id, roster_id=s.roster_id) }}" style="color:inherit">{{ s.team }}</a>
+            </div>
+          </td>
+          <td class="num {{ 'pos' if (s.adp_delta_avg or 0) > 0 else ('neg' if (s.adp_delta_avg or 0) < 0 else '') }}">
+            {{ '{:+.1f}'.format(s.adp_delta_avg) if s.adp_delta_avg is not none else '—' }}
+          </td>
+          <td class="num slot">{{ '{:+.0f}'.format(s.adp_delta_sum) if s.adp_delta_sum is not none else '—' }}</td>
+          <td>
+            {% if s.best_pick %}
+              <a href="{{ url_for('player', league_id=league_id, player_id=s.best_pick.player_id) }}">{{ s.best_pick.name }}</a>
+              <span class="slot">{{ '{:+.0f}'.format(s.best_pick.adp_delta) }}</span>
+            {% else %}<span class="slot">—</span>{% endif %}
+          </td>
+          <td>
+            {% if s.worst_pick %}
+              <a href="{{ url_for('player', league_id=league_id, player_id=s.worst_pick.player_id) }}">{{ s.worst_pick.name }}</a>
+              <span class="slot">{{ '{:+.0f}'.format(s.worst_pick.adp_delta) }}</span>
+            {% else %}<span class="slot">—</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
+
+{% block foot %} A retrospective draft grade — who actually got the best players — arrives once real weekly scoring exists to measure against.{% endblock %}

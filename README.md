@@ -314,6 +314,35 @@ validated for colour-blindness (CVD ΔE 27.9 protan, well above the 8 threshold)
 and the number is always printed next to the bar, so nothing rests on colour
 alone.
 
+### Draft board
+
+`/league/<id>/draft` reproduces Sleeper's own grid — one column per team in
+draft-slot order, one row per round, headshots and position-coded cards — and
+adds the one metric it can honestly carry before a season exists: each pick's
+**pick number minus ADP**, so a reach (red) or a fall past expectation (green)
+is visible on the card itself. Ten team columns fit the screen at once rather
+than forcing a horizontal scroll, since this is a genuinely wide page, not a
+prose one — the rest of the app keeps a comfortable reading width.
+
+This is the **instant** half of a draft grade, the same idea as the trade
+machine's instant grade: how each pick compares to the market right now. A
+retrospective pass — who actually ended up with the best players, using real
+weekly scoring instead of ADP — is a separate, later phase; the page says so
+rather than pretending to have an answer before the season exists to measure
+against. The team summary ranks by **average** pick-vs-ADP, not the raw sum —
+a 23-round draft racks up a big total on volume alone, and the average is what
+compares fairly across teams (verified directly: a team with one huge steal on
+a single graded pick outranks a team with a bigger but noisier total spread
+across more picks).
+
+Sleeper does not persist a pick's draft slot or a slot-to-roster mapping, only
+who made each pick — round 1 already has exactly one pick per team in slot
+order, so it is used to recover the column order rather than adding a column
+for data the picks already imply. A team defense's Sleeper id is its team
+abbreviation, not a real player id, and has no photo behind it (the CDN 403s
+rather than 404s), so headshots are suppressed by position instead of being
+discovered as a broken image in the browser.
+
 ### Avatars
 
 Team names carry the manager's Sleeper avatar wherever they appear — power
