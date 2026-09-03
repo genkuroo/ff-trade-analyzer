@@ -127,7 +127,7 @@ Two external sources, both free and keyless:
 
 ## Tests
 
-`pytest` — 70 tests, no network. `tests/conftest.py` builds a four-team league
+`pytest` — 101 tests, no network. `tests/conftest.py` builds a four-team league
 with round numbers directly in SQLite; every test gets its own throwaway file
 via the `db_path` fixture, which rebinds `db.DB_PATH` (the module caches it at
 import, so setting the env var alone is not enough).

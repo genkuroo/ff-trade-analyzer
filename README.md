@@ -393,7 +393,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-70 tests, no network. Every one builds a throwaway SQLite database from a small
+101 tests, no network. Every one builds a throwaway SQLite database from a small
 synthetic league — four teams, a five-slot lineup, round numbers — so a failure
 is readable and a flaky upstream API can never turn the build red. The suite is
 verified to pass with all outbound sockets blocked.
