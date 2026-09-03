@@ -7,6 +7,7 @@
     python cli.py power                luck-adjusted power rankings
     python cli.py trades               grade every completed trade
     python cli.py propose --give X --get Y   grade a hypothetical trade
+                          (also --give-pick 2027:1, --get-faab 25)
     python cli.py discover <username>  list a Sleeper user's leagues + ids
     python cli.py status               what is in the database right now
 
@@ -170,7 +171,11 @@ def cmd_propose(args) -> None:
     league_id = _only_league(conn, args.league)
     try:
         sides = grading.build_proposal(
-            conn, league_id, give=args.give, get=args.get, from_team=getattr(args, "from_team", None)
+            conn, league_id, give=args.give, get=args.get,
+            from_team=getattr(args, "from_team", None),
+            to_team=getattr(args, "to_team", None),
+            give_picks=args.give_pick, get_picks=args.get_pick,
+            give_faab=args.give_faab or 0, get_faab=args.get_faab or 0,
         )
     except grading.ProposalError as exc:
         conn.close()
@@ -311,8 +316,23 @@ def main() -> None:
         help="a player you would receive (repeat for several)",
     )
     p_prop.add_argument(
+        "--give-pick", action="append", default=[], metavar="SEASON:ROUND",
+        help="a future pick you would send, e.g. 2027:1 (add :ORIGINAL for one "
+             "you acquired from another team)",
+    )
+    p_prop.add_argument(
+        "--get-pick", action="append", default=[], metavar="SEASON:ROUND",
+        help="a future pick you would receive",
+    )
+    p_prop.add_argument("--give-faab", type=int, metavar="N", help="FAAB dollars you send")
+    p_prop.add_argument("--get-faab", type=int, metavar="N", help="FAAB dollars you receive")
+    p_prop.add_argument(
         "--from", dest="from_team", metavar="TEAM",
-        help="your team, if the players you are giving up span rosters",
+        help="your team; required if you are not giving up a player",
+    )
+    p_prop.add_argument(
+        "--to", dest="to_team", metavar="TEAM",
+        help="the other team; required if you are not receiving a player",
     )
     p_prop.add_argument("--league", help="league id or name, if several are synced")
     p_prop.set_defaults(func=cmd_propose)

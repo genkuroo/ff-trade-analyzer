@@ -26,6 +26,10 @@ log = logging.getLogger(__name__)
 # Weeks past the fantasy playoffs never have fantasy-relevant data.
 LAST_NFL_WEEK = 18
 
+# How many future rookie drafts to treat as tradeable. Dynasty leagues rarely
+# trade further out than this, and the market stops pricing picks beyond it.
+FUTURE_PICK_SEASONS = 3
+
 
 def today() -> str:
     return dt.date.today().isoformat()
@@ -179,6 +183,7 @@ def sync_league(
     counts["transactions"] = _sync_transactions(conn, league_id, through_week)
     counts["player_weeks"] = _sync_matchups(conn, league_id, through_week)
     counts["draft_picks"] = _sync_drafts(conn, league_id)
+    counts["pick_ownership"] = _sync_pick_ownership(conn, league_id, meta)
     counts["adp"] = sync_adp(conn, meta.get("season") or "")
     conn.commit()
 
@@ -365,6 +370,54 @@ def sync_all_values(conn, shapes: list[dict]) -> int:
         players, picks = sync_values(conn, **shape)
         total += players + picks
     return total
+
+
+def _sync_pick_ownership(conn, league_id: str, meta: dict) -> int:
+    """Work out who holds every future draft pick.
+
+    Sleeper's ``/traded_picks`` lists only picks that have moved, so ownership
+    has to be built the other way round: assume every team still holds its own
+    picks, then apply the transfers on top. Doing it here rather than at query
+    time means a trade proposal can simply ask what a team owns.
+
+    Only future seasons are generated. A pick in a draft that has already
+    happened is not an asset any more -- it is a player.
+    """
+    settings = meta.get("settings") or {}
+    rounds = settings.get("draft_rounds") or 4
+    season = int(meta.get("season") or 0)
+    teams = meta.get("total_rosters") or 12
+    if not season:
+        return 0
+
+    conn.execute("DELETE FROM pick_ownership WHERE league_id = ?", (league_id,))
+    rows = [
+        (league_id, str(year), rnd, roster, roster)
+        for year in range(season + 1, season + 1 + FUTURE_PICK_SEASONS)
+        for rnd in range(1, rounds + 1)
+        for roster in range(1, teams + 1)
+    ]
+    conn.executemany(
+        """INSERT OR REPLACE INTO pick_ownership
+           (league_id, season, round, original_roster, owner_roster)
+           VALUES (?, ?, ?, ?, ?)""",
+        rows,
+    )
+
+    moved = 0
+    for pick in sleeper.traded_picks(league_id):
+        if pick.get("owner_id") is None:
+            continue
+        conn.execute(
+            """UPDATE pick_ownership SET owner_roster = ?
+                WHERE league_id = ? AND season = ? AND round = ?
+                  AND original_roster = ?""",
+            (pick["owner_id"], league_id, str(pick.get("season")),
+             pick.get("round"), pick.get("roster_id")),
+        )
+        moved += conn.total_changes and 1 or 0
+    log.info("pick ownership: %d picks, %d have been traded", len(rows), moved)
+    return len(rows)
 
 
 def sync_history(conn, league_id: str, max_seasons: int = 10) -> list:

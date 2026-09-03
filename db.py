@@ -254,6 +254,21 @@ def init_db(conn=None):
         )"""
     )
 
+    # Who owns each future draft pick. Sleeper only reports picks that have
+    # *changed hands*; every other pick is implicitly still owned by the team
+    # whose pick it is. Materialising both cases here means the trade machine
+    # can offer a team its real assets without re-deriving that rule each time.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS pick_ownership (
+            league_id       TEXT NOT NULL,
+            season          TEXT NOT NULL,
+            round           INTEGER NOT NULL,
+            original_roster INTEGER NOT NULL,   -- whose pick it originally is
+            owner_roster    INTEGER NOT NULL,   -- who holds it now
+            PRIMARY KEY (league_id, season, round, original_roster)
+        )"""
+    )
+
     # Actual rookie/startup draft results, so a traded pick can be resolved to
     # the player it became -- that is how a pick gets a retrospective grade.
     conn.execute(

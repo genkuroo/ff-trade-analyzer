@@ -193,9 +193,33 @@ not exist yet. FantasyCalc prices picks *by* slot — a 2027 early first is wort
 nearly double a late one. So the slot has to be projected from how good the
 original owner is, worst team picking first, with three levels of confidence:
 an exact slot when the draft order is known, an early/mid/late tier projected
-from standings, or the round's blended value when the market prices no tiers
+from the owner, or the round's blended value when the market prices no tiers
 that far out. The grader reports which one it used rather than presenting a
 projection as a fact.
+
+**Projecting the tier uses record and roster value together, weighted toward
+record** (70/30 once there is a season to read). Record is what literally sets
+the draft order; roster value is the corrective, because a team at 2-6 with the
+best roster in the league is far likelier to climb than one that is 2-6 on
+merit, and their pick should not be priced as a premium selection.
+
+The weighting is not fixed. In week 1 a record carries no information — everyone
+is 0-0 — so the projection leans entirely on roster value and slides toward
+record as the sample grows, reaching full weight around six games. Preseason
+behaviour is then a special case of the same formula rather than a separate
+branch:
+
+```
+games   record weight   0-8 team (good roster) / 4-4 team (worst roster)
+    0             0%    late  / early      ← roster value only
+    2            23%    mid   / early
+    6            70%    early / mid        ← record has taken over
+```
+
+**Picks are tradeable in the trade machine and from the CLI**, alongside FAAB.
+Ownership is derived from Sleeper's `traded_picks` — which lists only picks that
+have *moved* — layered on the assumption that every other pick is still held by
+the team whose pick it is.
 
 FAAB is priced off the league's own lineups: a full budget is worth roughly the
 weakest player anyone is actually starting, because that is what the money is

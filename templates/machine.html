@@ -6,9 +6,12 @@
 {% block body %}
   <h2>Trade machine</h2>
   <p class="sub" style="margin-bottom:12px">
-    Pick players from two rosters and grade the deal before you offer it. Everything
-    lives in the URL and nothing is saved, so a graded trade is just a link you can
-    paste into the league chat.
+    Players, future draft picks and FAAB, from two rosters, graded before you offer
+    it. Everything lives in the URL and nothing is saved, so a graded trade is just a
+    link you can paste into the league chat.
+    Pick values are projected from the standing of whoever <em>originally</em> owned
+    them — a rebuilding team's future first is worth far more than a contender's —
+    and the grade shows which projection it used.
   </p>
 
   <form method="get" class="card" style="padding:16px">
@@ -57,6 +60,54 @@
             <span class="num">{{ '{:,}'.format(p.value) }}</span>
           </label>
         {% endfor %}
+      </div>
+    </div>
+
+    <div class="picker" style="margin-top:14px">
+      <div>
+        <div class="slot" style="margin-bottom:4px">Picks you send</div>
+        {% for p in picks_mine %}
+          <label>
+            <span>
+              <input type="checkbox" name="givepick" value="{{ p.key }}"
+                     {{ 'checked' if p.key in give_picks }}>
+              {{ p.label }}
+              {% if p.origin %}<span class="slot">{{ p.origin }}</span>{% endif %}
+            </span>
+            <span class="num">{{ '{:,}'.format(p.value) }}</span>
+          </label>
+        {% else %}
+          <p class="note" style="padding-left:0">No future picks on record.</p>
+        {% endfor %}
+      </div>
+      <div>
+        <div class="slot" style="margin-bottom:4px">Picks you receive</div>
+        {% for p in picks_theirs %}
+          <label>
+            <span>
+              <input type="checkbox" name="getpick" value="{{ p.key }}"
+                     {{ 'checked' if p.key in get_picks }}>
+              {{ p.label }}
+              {% if p.origin %}<span class="slot">{{ p.origin }}</span>{% endif %}
+            </span>
+            <span class="num">{{ '{:,}'.format(p.value) }}</span>
+          </label>
+        {% else %}
+          <p class="note" style="padding-left:0">No future picks on record.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="picker" style="margin-top:14px">
+      <div>
+        <label class="slot" for="givefaab">FAAB you send ($)</label>
+        <input type="number" name="givefaab" id="givefaab" min="0" max="1000"
+               value="{{ give_faab or '' }}" placeholder="0" style="width:100%">
+      </div>
+      <div>
+        <label class="slot" for="getfaab">FAAB you receive ($)</label>
+        <input type="number" name="getfaab" id="getfaab" min="0" max="1000"
+               value="{{ get_faab or '' }}" placeholder="0" style="width:100%">
       </div>
     </div>
 

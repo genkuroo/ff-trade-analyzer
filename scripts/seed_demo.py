@@ -130,6 +130,22 @@ def _write_league(conn, config_key: str) -> None:
         (LEAGUE_ID, "Demo Dynasty League", "2026", "in_season", 2, len(TEAMS),
          json.dumps(ROSTER_POSITIONS), 15, 11, 1.0, 1, None, ingest.today()),
     )
+    # Future picks, so the demo exercises pick valuation and pick trading.
+    season = 2026
+    rounds = 3
+    conn.execute("DELETE FROM pick_ownership WHERE league_id = ?", (LEAGUE_ID,))
+    conn.executemany(
+        """INSERT OR REPLACE INTO pick_ownership
+           (league_id, season, round, original_roster, owner_roster)
+           VALUES (?, ?, ?, ?, ?)""",
+        [
+            (LEAGUE_ID, str(year), rnd, roster, roster)
+            for year in range(season + 1, season + 4)
+            for rnd in range(1, rounds + 1)
+            for roster in range(1, len(TEAMS) + 1)
+        ],
+    )
+
     for roster_id, name in enumerate(TEAMS, start=1):
         # Records are invented but internally consistent: they drive the pick
         # tier projection, so a bad team's future first is correctly worth more.

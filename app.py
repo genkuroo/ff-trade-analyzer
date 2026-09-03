@@ -19,6 +19,12 @@ import retro
 
 app = Flask(__name__)
 
+# Bring the schema up to date at import, not just when the CLI runs. A database
+# created by an older version is missing any table added since, and the web app
+# reads it directly -- without this, a deploy that adds a table serves 500s until
+# the next scheduled sync happens to run the migration. init_db is idempotent.
+db.init_db().close()
+
 
 @app.route("/")
 def index():
@@ -101,11 +107,21 @@ def machine(league_id):
     theirs = request.args.get("b", type=int) or (ids[1] if len(ids) > 1 else None)
     give = request.args.getlist("give")
     get = request.args.getlist("get")
+    give_picks = request.args.getlist("givepick")
+    get_picks = request.args.getlist("getpick")
+    give_faab = request.args.get("givefaab", type=int) or 0
+    get_faab = request.args.get("getfaab", type=int) or 0
 
     result, error = None, None
-    if give and get:
+    offered = bool(give or give_picks or give_faab)
+    wanted = bool(get or get_picks or get_faab)
+    if offered and wanted:
         try:
-            sides = grading.sides_from_ids(conn, league_id, mine, theirs, give, get)
+            sides = grading.sides_from_ids(
+                conn, league_id, mine, theirs, give, get,
+                give_picks=give_picks, get_picks=get_picks,
+                give_faab=give_faab, get_faab=get_faab,
+            )
             # applied=False: these rosters do not include the proposed trade.
             result = grading.grade(conn, league_id, sides, applied=False)
         except grading.ProposalError as exc:
@@ -119,8 +135,14 @@ def machine(league_id):
         "theirs": theirs,
         "board_mine": grading.roster_board(conn, league_id, mine) if mine else [],
         "board_theirs": grading.roster_board(conn, league_id, theirs) if theirs else [],
+        "picks_mine": grading.owned_picks(conn, league_id, mine) if mine else [],
+        "picks_theirs": grading.owned_picks(conn, league_id, theirs) if theirs else [],
         "give": set(give),
         "get": set(get),
+        "give_picks": set(give_picks),
+        "get_picks": set(get_picks),
+        "give_faab": give_faab,
+        "get_faab": get_faab,
         "result": result,
         "error": error,
     }

@@ -33,6 +33,13 @@ import analytics
 # Letter grades from the share of value a side gained or lost, measured against
 # the larger side of the deal. A 10% edge on a big trade is a real win; the same
 # raw points on a swap of two backups is noise, which is why this is a ratio.
+# How much a team's record counts toward projecting where their pick lands,
+# once there is enough of a season to read. Record outweighs roster value
+# because record is what actually sets the draft order; roster value is the
+# corrective for a good team off to a bad start.
+RECORD_WEIGHT = 0.70
+RECORD_RAMP_GAMES = 6
+
 GRADE_SCALE = [
     (0.25, "A+"), (0.15, "A"), (0.09, "A-"),
     (0.05, "B+"), (0.02, "B"), (-0.02, "B-"),
@@ -102,9 +109,22 @@ def pick_value(conn, league_id: str, config_key: str, asof: str,
 def _project_pick_tier(conn, league_id: str, original_roster: int | None) -> str | None:
     """Guess whether a team's pick lands early, mid or late in its round.
 
-    Worst team picks first, so a *bad* team's pick is an *early* -- and valuable
-    -- pick. Standings drive this once games have been played; before that,
-    lineup value is the best available proxy for how a team will finish.
+    Worst team picks first, so a *bad* team's pick is an *early* -- and
+    valuable -- pick. The question is what "bad" means, and two signals
+    disagree: a team's record, and how good their roster actually is.
+
+    Both are used, and **record is weighted more heavily**, because record is
+    what literally determines draft order. Roster value is the corrective: a
+    team sitting at 2-6 with the best roster in the league is far more likely
+    to climb than one that is 2-6 on merit, so their pick should not be priced
+    as a premium early selection.
+
+    The weighting is not fixed. In week 1 a record carries no information at
+    all -- everyone is 0-0 or 1-0 -- so the projection leans entirely on roster
+    value and slides toward record as the sample grows, reaching its full
+    weight around the six-game mark. That makes the preseason behaviour (pure
+    roster value) a special case of the same formula rather than a separate
+    branch.
     """
     if original_roster is None:
         return None
@@ -112,19 +132,57 @@ def _project_pick_tier(conn, league_id: str, original_roster: int | None) -> str
     if not ranked:
         return None
 
-    played = any((t["record"] or "0-0") != "0-0" for t in ranked)
-    if played:
-        order = sorted(ranked, key=lambda t: (t["points_for"] or 0))
-    else:
-        order = sorted(ranked, key=lambda t: t["lineup_value"])
+    records = {
+        m["roster_id"]: m
+        for m in conn.execute(
+            "SELECT * FROM managers WHERE league_id = ?", (league_id,)
+        )
+    }
+    games = max(
+        (m["wins"] or 0) + (m["losses"] or 0) + (m["ties"] or 0)
+        for m in records.values()
+    ) if records else 0
+
+    # Record's weight ramps in over the first six games; before that the
+    # sample is too small to say anything.
+    record_weight = RECORD_WEIGHT * min(games / RECORD_RAMP_GAMES, 1.0) if games else 0.0
+    value_weight = 1.0 - record_weight
+
+    wins = {}
+    for team in ranked:
+        row = records.get(team["roster_id"])
+        played = ((row["wins"] or 0) + (row["losses"] or 0) + (row["ties"] or 0)) if row else 0
+        wins[team["roster_id"]] = ((row["wins"] or 0) / played) if row and played else 0.0
+
+    scored = [
+        {
+            "roster_id": team["roster_id"],
+            "score": value_weight * _normalise(team["lineup_value"], ranked, "lineup_value")
+            + record_weight * _normalise_map(wins[team["roster_id"]], wins),
+        }
+        for team in ranked
+    ]
+    scored.sort(key=lambda t: t["score"])   # worst first, and worst picks first
 
     position = next(
-        (i for i, t in enumerate(order) if t["roster_id"] == original_roster), None
+        (i for i, t in enumerate(scored) if t["roster_id"] == original_roster), None
     )
     if position is None:
         return None
-    third = max(len(order) // 3, 1)
+    third = max(len(scored) // 3, 1)
     return "early" if position < third else "late" if position >= 2 * third else "mid"
+
+
+def _normalise(value, rows, key) -> float:
+    values = [r[key] or 0 for r in rows]
+    low, high = min(values), max(values)
+    return ((value or 0) - low) / (high - low) if high > low else 0.5
+
+
+def _normalise_map(value, mapping) -> float:
+    values = list(mapping.values())
+    low, high = min(values), max(values)
+    return (value - low) / (high - low) if high > low else 0.5
 
 
 def faab_dollar_value(conn, league_id: str, config_key: str, asof: str) -> float:
@@ -481,7 +539,11 @@ def resolve_team(conn, league_id: str, query: str) -> int:
 
 
 def build_proposal(conn, league_id: str, give: list[str], get: list[str],
-                   from_team: str | None = None) -> dict:
+                   from_team: str | None = None,
+                   give_picks: list[str] | None = None,
+                   get_picks: list[str] | None = None,
+                   give_faab: int = 0, get_faab: int = 0,
+                   to_team: str | None = None) -> dict:
     """Assemble a two-sided hypothetical from player names.
 
     Written from one manager's point of view -- what they give and what they get
@@ -491,8 +553,6 @@ def build_proposal(conn, league_id: str, give: list[str], get: list[str],
     """
     given = [resolve_player(conn, league_id, name) for name in give]
     gotten = [resolve_player(conn, league_id, name) for name in get]
-    if not given or not gotten:
-        raise ProposalError("A trade needs at least one player on each side.")
 
     give_rosters = {r for _, r, _ in given}
     get_rosters = {r for _, r, _ in gotten}
@@ -502,42 +562,112 @@ def build_proposal(conn, league_id: str, give: list[str], get: list[str],
         mine = give_rosters.pop()
     else:
         raise ProposalError(
-            "The players being given away are on different rosters — "
-            "name the team with --from."
+            "Name your team with --from (needed when you are not giving up a "
+            "player, or when the players span rosters)."
         )
-    if len(get_rosters) != 1:
+    if to_team:
+        theirs = resolve_team(conn, league_id, to_team)
+    elif len(get_rosters) == 1:
+        theirs = get_rosters.pop()
+    else:
         raise ProposalError(
-            "The players being acquired are on different rosters; this grader "
-            "handles two-team trades."
+            "Name the other team with --to (needed for a picks-only trade, or "
+            "when the players span rosters)."
         )
-    theirs = get_rosters.pop()
     if theirs == mine:
         raise ProposalError("Both sides of the trade are the same team.")
 
-    blank = lambda: {"players_in": [], "players_out": [], "picks_in": [],
-                     "picks_out": [], "faab_in": 0, "faab_out": 0}
-    sides = {mine: blank(), theirs: blank()}
-    for pid, _, _ in given:
-        sides[mine]["players_out"].append(pid)
-        sides[theirs]["players_in"].append(pid)
-    for pid, _, _ in gotten:
-        sides[mine]["players_in"].append(pid)
-        sides[theirs]["players_out"].append(pid)
-    return sides
+    # Hand off to the id-based builder so ownership checks and assembly live in
+    # exactly one place.
+    return sides_from_ids(
+        conn, league_id, mine, theirs,
+        [pid for pid, _, _ in given], [pid for pid, _, _ in gotten],
+        give_picks=[_expand_pick(k, mine) for k in (give_picks or [])],
+        get_picks=[_expand_pick(k, theirs) for k in (get_picks or [])],
+        give_faab=give_faab, get_faab=get_faab,
+    )
+
+
+def _expand_pick(key: str, default_owner: int) -> str:
+    """Allow ``2027:1`` to mean "that team's own pick" as a shorthand.
+
+    Typing the original owner every time is tedious and almost always the team
+    trading it, so the third field is optional on the command line.
+    """
+    parts = key.split(":")
+    if len(parts) == 2:
+        return f"{parts[0]}:{parts[1]}:{default_owner}"
+    return key
+
+
+def owned_picks(conn, league_id: str, roster_id: int) -> list[dict]:
+    """Future draft picks a team currently holds, priced, soonest first.
+
+    Includes picks acquired from other teams, which is why the original owner
+    is carried through: a rebuilding team's future first is worth far more than
+    a contender's, and the price depends on whose it is, not who holds it.
+    """
+    league = analytics.league_row(conn, league_id)
+    config_key = analytics.config_key_for(league)
+    asof = analytics.latest_value_date(conn, config_key)
+    managers = {
+        m["roster_id"]: (m["team_name"] or m["display_name"])
+        for m in conn.execute(
+            "SELECT * FROM managers WHERE league_id = ?", (league_id,)
+        )
+    }
+
+    out = []
+    for row in conn.execute(
+        """SELECT season, round, original_roster FROM pick_ownership
+            WHERE league_id = ? AND owner_roster = ?
+            ORDER BY season, round, original_roster""",
+        (league_id, roster_id),
+    ):
+        value, basis = pick_value(
+            conn, league_id, config_key, asof,
+            row["season"], row["round"], row["original_roster"],
+        )
+        own = row["original_roster"] == roster_id
+        out.append(
+            {
+                "key": f"{row['season']}:{row['round']}:{row['original_roster']}",
+                "season": row["season"],
+                "round": row["round"],
+                "original_roster": row["original_roster"],
+                "label": f"{row['season']} round {row['round']}",
+                "origin": "" if own else f"via {managers.get(row['original_roster'], '?')}",
+                "value": value,
+                "basis": basis,
+            }
+        )
+    return out
+
+
+def _parse_pick_key(key: str) -> tuple:
+    season, rnd, original = key.split(":")
+    return season, int(rnd), int(original)
 
 
 def sides_from_ids(conn, league_id: str, mine: int, theirs: int,
-                   give_ids: list[str], get_ids: list[str]) -> dict:
+                   give_ids: list[str], get_ids: list[str],
+                   give_picks: list[str] | None = None,
+                   get_picks: list[str] | None = None,
+                   give_faab: int = 0, get_faab: int = 0) -> dict:
     """Build a two-sided proposal from player ids and explicit roster ids.
 
     The id-based twin of :func:`build_proposal`, for callers that already know
     exactly who they mean -- a web form, mainly, where the user picked from a
     list rather than typing a name.
     """
+    give_picks = give_picks or []
+    get_picks = get_picks or []
     if mine == theirs:
         raise ProposalError("Pick two different teams.")
-    if not give_ids or not get_ids:
-        raise ProposalError("Select at least one player on each side.")
+    if not (give_ids or give_picks or give_faab):
+        raise ProposalError("You have not offered anything.")
+    if not (get_ids or get_picks or get_faab):
+        raise ProposalError("You are not receiving anything.")
 
     owners = dict(
         conn.execute(
@@ -554,6 +684,20 @@ def sides_from_ids(conn, league_id: str, mine: int, theirs: int,
         if owners.get(pid) != theirs:
             raise ProposalError("A player being acquired is not on that roster.")
 
+    # Ownership is checked for picks the same way it is for players: a
+    # proposal that moves an asset the team does not hold is a bug, not a trade.
+    holders = {
+        (row["season"], row["round"], row["original_roster"]): row["owner_roster"]
+        for row in conn.execute(
+            "SELECT * FROM pick_ownership WHERE league_id = ?", (league_id,)
+        )
+    }
+    for keys, owner, who in ((give_picks, mine, "give away"),
+                             (get_picks, theirs, "receive")):
+        for key in keys:
+            if holders.get(_parse_pick_key(key)) != owner:
+                raise ProposalError(f"A pick you tried to {who} is not theirs to trade.")
+
     blank = lambda: {"players_in": [], "players_out": [], "picks_in": [],
                      "picks_out": [], "faab_in": 0, "faab_out": 0}
     sides = {mine: blank(), theirs: blank()}
@@ -563,6 +707,20 @@ def sides_from_ids(conn, league_id: str, mine: int, theirs: int,
     for pid in get_ids:
         sides[mine]["players_in"].append(pid)
         sides[theirs]["players_out"].append(pid)
+    for key in give_picks:
+        pick = _parse_pick_key(key)
+        sides[mine]["picks_out"].append(pick)
+        sides[theirs]["picks_in"].append(pick)
+    for key in get_picks:
+        pick = _parse_pick_key(key)
+        sides[mine]["picks_in"].append(pick)
+        sides[theirs]["picks_out"].append(pick)
+    if give_faab:
+        sides[mine]["faab_out"] = give_faab
+        sides[theirs]["faab_in"] = give_faab
+    if get_faab:
+        sides[mine]["faab_in"] = get_faab
+        sides[theirs]["faab_out"] = get_faab
     return sides
 
 
