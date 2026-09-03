@@ -31,7 +31,7 @@
         <tbody>
         {% for s in history.active|sort(attribute='acquired_week') %}
           <tr>
-            <td><strong>{{ s.name }}</strong></td>
+            <td><a href="{{ url_for('player', league_id=league_id, player_id=s.player_id) }}"><strong>{{ s.name }}</strong></a></td>
             <td>{{ s.position }}</td>
             <td class="slot">{{ s.team }}</td>
             <td>
@@ -63,7 +63,7 @@
           <tbody>
           {% for s in history.departed|sort(attribute='last_week', reverse=true) %}
             <tr>
-              <td><strong>{{ s.name }}</strong></td>
+              <td><a href="{{ url_for('player', league_id=league_id, player_id=s.player_id) }}"><strong>{{ s.name }}</strong></a></td>
               <td>{{ s.position }}</td>
               <td><span class="pill">{{ s.acquired_via.replace('_', ' ') }}</span></td>
               <td class="num slot">{{ s.first_week }}–{{ s.last_week }}</td>

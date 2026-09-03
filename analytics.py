@@ -720,3 +720,198 @@ def _stdev(values) -> float:
         return 0.0
     mean = sum(values) / len(values)
     return (sum((v - mean) ** 2 for v in values) / (len(values) - 1)) ** 0.5
+
+
+# -- single player ---------------------------------------------------------
+
+
+def player_detail(conn, league_id: str, player_id: str) -> dict | None:
+    """Everything known about one player, in this league's context.
+
+    The value history is the reason this page exists. Market values are
+    snapshotted daily and never overwritten, so a player accumulates a real
+    price chart -- and that is what makes it possible to say a trade was fair
+    *at the time* rather than only in hindsight. Early on the series is two or
+    three points long, which the page says plainly instead of drawing a
+    confident-looking line through almost nothing.
+    """
+    player = conn.execute(
+        "SELECT * FROM players WHERE player_id = ?", (player_id,)
+    ).fetchone()
+    if not player:
+        return None
+
+    league = league_row(conn, league_id)
+    config_key = config_key_for(league)
+
+    history = [
+        {"date": row["asof_date"], "value": row["value"],
+         "overall_rank": row["overall_rank"], "position_rank": row["position_rank"]}
+        for row in conn.execute(
+            """SELECT asof_date, value, overall_rank, position_rank
+                 FROM player_values
+                WHERE config_key = ? AND player_id = ?
+                ORDER BY asof_date""",
+            (config_key, player_id),
+        )
+    ]
+
+    weeks = [
+        {"week": row["week"], "points": row["points"] or 0.0,
+         "started": bool(row["started"]), "roster_id": row["roster_id"]}
+        for row in conn.execute(
+            """SELECT week, points, started, roster_id FROM player_weeks
+                WHERE league_id = ? AND player_id = ? ORDER BY week""",
+            (league_id, player_id),
+        )
+    ]
+
+    adp = conn.execute(
+        """SELECT adp, position_adp FROM player_adp
+            WHERE player_id = ? ORDER BY asof_date DESC LIMIT 1""",
+        (player_id,),
+    ).fetchone()
+    drafted = conn.execute(
+        """SELECT pick_no, round, roster_id FROM draft_picks
+            WHERE league_id = ? AND player_id = ?""",
+        (league_id, player_id),
+    ).fetchone()
+
+    managers = {
+        m["roster_id"]: (m["team_name"] or m["display_name"])
+        for m in conn.execute(
+            "SELECT * FROM managers WHERE league_id = ?", (league_id,)
+        )
+    }
+    stints = [
+        {**s, "team": managers.get(s["roster_id"], f"Roster {s['roster_id']}")}
+        for s in roster_stints(conn, league_id)
+        if s["player_id"] == player_id
+    ]
+
+    trades = []
+    for row in conn.execute(
+        """SELECT t.txn_id, t.week, tp.direction, tp.roster_id
+             FROM transaction_players tp
+             JOIN transactions t ON t.txn_id = tp.txn_id
+            WHERE t.league_id = ? AND tp.player_id = ? AND t.type = 'trade'
+            ORDER BY t.created_ms""",
+        (league_id, player_id),
+    ):
+        trades.append(
+            {"txn_id": row["txn_id"], "week": row["week"],
+             "direction": row["direction"],
+             "team": managers.get(row["roster_id"], "?")}
+        )
+
+    latest = history[-1] if history else {}
+    first = history[0] if history else {}
+    started = [w for w in weeks if w["started"]]
+    return {
+        "player_id": player_id,
+        "name": player["name"],
+        "position": player["position"],
+        "team": player["team"],
+        "age": player["age"],
+        "status": player["status"],
+        "value": latest.get("value"),
+        "overall_rank": latest.get("overall_rank"),
+        "position_rank": latest.get("position_rank"),
+        "history": history,
+        "value_change": (latest.get("value") - first.get("value"))
+        if len(history) > 1 else None,
+        "weeks": weeks,
+        "points_started": round(sum(w["points"] for w in started), 2),
+        "points_benched": round(
+            sum(w["points"] for w in weeks if not w["started"]), 2
+        ),
+        "starts": len(started),
+        "adp": adp["adp"] if adp else None,
+        "position_adp": adp["position_adp"] if adp else None,
+        "drafted_pick": drafted["pick_no"] if drafted else None,
+        "drafted_by": managers.get(drafted["roster_id"]) if drafted else None,
+        "adp_delta": round(drafted["pick_no"] - adp["adp"], 1)
+        if drafted and adp and adp["adp"] else None,
+        "stints": stints,
+        "trades": trades,
+        "owner": stints[-1]["team"] if stints else None,
+    }
+
+
+def chart_geometry(series: list[dict], x_key: str, y_key: str,
+                   width: int = 560, height: int = 130, pad: int = 26) -> dict:
+    """Pre-compute SVG coordinates for a small inline chart.
+
+    Done in Python rather than in the template because Jinja arithmetic for
+    axis scaling is unreadable and easy to get subtly wrong. Returns points,
+    a path, and the axis extents the template needs to label.
+
+    The y-axis starts at zero for counts and points, but for market value it is
+    zoomed to the data range -- a player moving 8,200 to 8,300 is invisible on a
+    zero-based axis, and value has no meaningful zero to anchor to.
+    """
+    if not series:
+        return {"points": [], "path": "", "empty": True}
+
+    values = [row[y_key] or 0 for row in series]
+    low, high = min(values), max(values)
+    if high == low:
+        low, high = low - 1, high + 1
+    span = high - low
+
+    inner_w = width - pad * 2
+    inner_h = height - pad * 2
+    step = inner_w / max(len(series) - 1, 1)
+
+    points = []
+    for index, row in enumerate(series):
+        value = row[y_key] or 0
+        points.append(
+            {
+                "x": round(pad + index * step, 2),
+                "y": round(pad + inner_h - ((value - low) / span) * inner_h, 2),
+                "label": row[x_key],
+                "value": value,
+            }
+        )
+    return {
+        "points": points,
+        "path": "M " + " L ".join(f"{p['x']},{p['y']}" for p in points),
+        "low": low,
+        "high": high,
+        "width": width,
+        "height": height,
+        "pad": pad,
+        "empty": False,
+    }
+
+
+def bar_geometry(series: list[dict], x_key: str, y_key: str,
+                 width: int = 560, height: int = 130, pad: int = 26) -> dict:
+    """Bars for weekly scoring. Zero-based, because points have a real zero."""
+    if not series:
+        return {"bars": [], "empty": True}
+    high = max((row[y_key] or 0) for row in series) or 1
+    inner_w = width - pad * 2
+    inner_h = height - pad * 2
+    # A 2px surface gap between adjacent bars, per the mark spec.
+    slot = inner_w / len(series)
+    bar_w = max(slot - 2, 2)
+
+    bars = []
+    for index, row in enumerate(series):
+        value = row[y_key] or 0
+        bar_h = (value / high) * inner_h
+        bars.append(
+            {
+                "x": round(pad + index * slot, 2),
+                "y": round(pad + inner_h - bar_h, 2),
+                "w": round(bar_w, 2),
+                "h": round(max(bar_h, 1), 2),
+                "label": row[x_key],
+                "value": value,
+                "muted": not row.get("started", True),
+            }
+        )
+    return {"bars": bars, "high": high, "width": width, "height": height,
+            "pad": pad, "empty": False}

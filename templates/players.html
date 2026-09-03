@@ -80,7 +80,8 @@
       {% for r in rows %}
         <tr>
           <td class="raw">
-            <strong>{{ r.name }}</strong>
+            <strong><a href="{{ url_for('player', league_id=league_id, player_id=r.player_id) }}"
+                       style="color:inherit">{{ r.name }}</a></strong>
             <span class="slot">{{ r.position }} {{ r.team }}{% if r.age %} · {{ r.age }}y{% endif %}</span>
           </td>
           <td class="slot">{{ r.owner or 'free agent' }}</td>
@@ -123,7 +124,8 @@
         <tbody>
         {% for r in draft.reaches %}
           <tr>
-            <td><strong>{{ r.name }}</strong> <span class="slot">{{ r.position }}{{ r.position_rank or '' }}</span></td>
+            <td><a href="{{ url_for('player', league_id=league_id, player_id=r.player_id) }}"><strong>{{ r.name }}</strong></a>
+                <span class="slot">{{ r.position }}{{ r.position_rank or '' }}</span></td>
             <td class="num">{{ r.actual_pick }}</td>
             <td class="num">{{ '{:.0f}'.format(r.adp) }}</td>
             <td class="num neg">{{ '{:+.0f}'.format(r.adp_delta) }}</td>
@@ -138,7 +140,8 @@
         <tbody>
         {% for r in draft.steals %}
           <tr>
-            <td><strong>{{ r.name }}</strong> <span class="slot">{{ r.position }}{{ r.position_rank or '' }}</span></td>
+            <td><a href="{{ url_for('player', league_id=league_id, player_id=r.player_id) }}"><strong>{{ r.name }}</strong></a>
+                <span class="slot">{{ r.position }}{{ r.position_rank or '' }}</span></td>
             <td class="num">{{ r.actual_pick }}</td>
             <td class="num">{{ '{:.0f}'.format(r.adp) }}</td>
             <td class="num pos">{{ '{:+.0f}'.format(r.adp_delta) }}</td>

@@ -93,7 +93,7 @@ between judging a decision and judging with hindsight.
 | 2 | Instant trade grade (value, roster fit, consolidation) | done |
 | 3 | Retrospective grade (counterfactual lineup replay) | done |
 | 4 | Power rankings with luck adjustment | done |
-| 5 | Flask dashboard | partial — rankings, trades, machine, players |
+| 5 | Flask dashboard | done |
 | 6 | Discord slash commands in `sleeper-discord-bot` | |
 
 Phase 5 landed early in skeleton form because the app is self-hosted: there has
@@ -224,6 +224,21 @@ the team whose pick it is.
 FAAB is priced off the league's own lineups: a full budget is worth roughly the
 weakest player anyone is actually starting, because that is what the money is
 for.
+
+### Player pages
+
+Every player name in the app links to `/league/<id>/player/<player_id>`: market
+value and both ranks, ADP against where they actually went, a **value history
+chart** built from the daily snapshots, weekly scoring with started and benched
+weeks distinguished, every stint on every roster, and any trade they were part of.
+
+The value chart is the payoff for never overwriting a snapshot. Its y-axis is
+zoomed to the data range rather than zero-based — a player moving 8,200 to 8,300
+is invisible on a zero-based axis, and market value has no meaningful zero to
+anchor to. Weekly points *are* zero-based, because points do.
+
+Both charts are inline SVG with no charting library, matching the rest of the
+app's zero-JS-dependency approach.
 
 ### The players page
 

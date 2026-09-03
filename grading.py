@@ -333,6 +333,7 @@ def _price(conn, league_id, config_key, asof, dollar, side, direction) -> list[d
         assets.append(
             {
                 "kind": "player",
+                "player_id": pid,
                 "label": row["name"] if row else pid,
                 "detail": f"{row['position']} {row['team']}" if row else "",
                 "age": row["age"] if row else None,

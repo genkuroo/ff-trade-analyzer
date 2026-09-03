@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% set page = 'player' %}
+{% block title %}{{ p.name }} — {{ summary.name }}{% endblock %}
+
+{% block body %}
+  <h2 style="margin-top:20px">{{ p.name }}</h2>
+  <p class="sub" style="margin-bottom:14px">
+    {{ p.position }} · {{ p.team }}{% if p.age %} · {{ p.age|int }} years old{% endif %}
+    {% if p.status and p.status != 'Active' %} · <span class="neg">{{ p.status }}</span>{% endif %}
+    {% if p.owner %} · rostered by
+      <a href="{{ url_for('team', league_id=league_id, roster_id=p.stints[-1].roster_id) }}">{{ p.owner }}</a>
+    {% else %} · free agent{% endif %}
+  </p>
+
+  <div class="card"><div class="tiles">
+    <div class="tile">
+      <div class="tval">{{ '{:,}'.format(p.value) if p.value else '—' }}</div>
+      <div class="tlab">market value</div>
+    </div>
+    <div class="tile">
+      <div class="tval">{{ p.position }}{{ p.position_rank or '—' }}</div>
+      <div class="tlab">position rank · ovr {{ p.overall_rank or '—' }}</div>
+    </div>
+    <div class="tile">
+      <div class="tval">{{ '{:.0f}'.format(p.adp) if p.adp else '—' }}</div>
+      <div class="tlab">average draft position</div>
+    </div>
+    <div class="tile">
+      <div class="tval">{{ p.drafted_pick or '—' }}</div>
+      <div class="tlab">
+        {% if p.drafted_by %}taken by {{ p.drafted_by }}{% else %}not drafted here{% endif %}
+      </div>
+    </div>
+    <div class="tile">
+      <div class="tval {{ 'pos' if (p.adp_delta or 0) > 0 else ('neg' if (p.adp_delta or 0) < 0 else '') }}">
+        {{ '{:+.0f}'.format(p.adp_delta) if p.adp_delta is not none else '—' }}
+      </div>
+      <div class="tlab">picks vs ADP</div>
+    </div>
+  </div></div>
+
+  <h2>Market value over time</h2>
+  <div class="card" style="padding:14px 16px">
+    {% if value_chart.points|length > 1 %}
+      <svg viewBox="0 0 {{ value_chart.width }} {{ value_chart.height }}"
+           width="100%" height="{{ value_chart.height }}" role="img"
+           aria-label="Market value from {{ value_chart.points[0].label }} to {{ value_chart.points[-1].label }}">
+        <line x1="{{ value_chart.pad }}" y1="{{ value_chart.height - value_chart.pad }}"
+              x2="{{ value_chart.width - value_chart.pad }}" y2="{{ value_chart.height - value_chart.pad }}"
+              stroke="var(--gridline)" stroke-width="1"/>
+        <path d="{{ value_chart.path }}" fill="none" stroke="var(--accent)"
+              stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        {% for pt in value_chart.points %}
+          <circle cx="{{ pt.x }}" cy="{{ pt.y }}" r="4.5" fill="var(--accent)"
+                  stroke="var(--surface)" stroke-width="2">
+            <title>{{ pt.label }}: {{ '{:,}'.format(pt.value) }}</title>
+          </circle>
+        {% endfor %}
+        <text x="{{ value_chart.pad }}" y="14" class="ctick">{{ '{:,}'.format(value_chart.high|int) }}</text>
+        <text x="{{ value_chart.pad }}" y="{{ value_chart.height - 6 }}" class="ctick">{{ value_chart.points[0].label }}</text>
+        <text x="{{ value_chart.width - value_chart.pad }}" y="{{ value_chart.height - 6 }}"
+              class="ctick" text-anchor="end">{{ value_chart.points[-1].label }}</text>
+      </svg>
+      <p class="note" style="padding:6px 0 0">
+        {{ value_chart.points|length }} daily snapshots
+        {% if p.value_change is not none %}
+          · {{ '{:+,}'.format(p.value_change) }} since tracking began
+        {% endif %}
+        · the axis is zoomed to the range, not zero-based — market value has no
+        meaningful zero.
+      </p>
+    {% else %}
+      <p class="empty" style="padding:8px 0">
+        Only {{ value_chart.points|length }} snapshot so far. Values are recorded once
+        a day and never overwritten, so this fills in from here — it is what lets a
+        trade be graded against the prices that were true on the day it was made.
+      </p>
+    {% endif %}
+  </div>
+
+  <h2>Weekly scoring</h2>
+  <div class="card" style="padding:14px 16px">
+    {% if week_chart.bars and week_chart.high > 0 %}
+      <svg viewBox="0 0 {{ week_chart.width }} {{ week_chart.height }}"
+           width="100%" height="{{ week_chart.height }}" role="img"
+           aria-label="Fantasy points by week">
+        <line x1="{{ week_chart.pad }}" y1="{{ week_chart.height - week_chart.pad }}"
+              x2="{{ week_chart.width - week_chart.pad }}" y2="{{ week_chart.height - week_chart.pad }}"
+              stroke="var(--gridline)" stroke-width="1"/>
+        {% for b in week_chart.bars %}
+          <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3"
+                fill="{{ 'var(--gridline)' if b.muted else 'var(--accent)' }}">
+            <title>Week {{ b.label }}: {{ '{:.1f}'.format(b.value) }} points{{ ' (benched)' if b.muted }}</title>
+          </rect>
+          <text x="{{ b.x + b.w / 2 }}" y="{{ week_chart.height - 8 }}"
+                class="ctick" text-anchor="middle">{{ b.label }}</text>
+        {% endfor %}
+        <text x="{{ week_chart.pad }}" y="14" class="ctick">{{ '{:.0f}'.format(week_chart.high) }}</text>
+      </svg>
+      <p class="note" style="padding:6px 0 0">
+        <span style="color:var(--accent)">■</span> started ·
+        <span style="color:var(--gridline)">■</span> on the bench ·
+        {{ p.starts }} start{{ '' if p.starts == 1 else 's' }},
+        {{ p.points_started }} points started and {{ p.points_benched }} left on the bench.
+      </p>
+    {% else %}
+      <p class="empty" style="padding:8px 0">No games scored yet this season.</p>
+    {% endif %}
+  </div>
+
+  {% if p.stints or p.trades %}
+    <h2>On this league</h2>
+    <div class="card">
+      <table class="dense">
+        <thead><tr><th>Team</th><th class="num">Weeks</th><th class="num">Held</th></tr></thead>
+        <tbody>
+        {% for s in p.stints %}
+          <tr>
+            <td><a href="{{ url_for('team', league_id=league_id, roster_id=s.roster_id) }}">{{ s.team }}</a></td>
+            <td class="num slot">{{ s.first_week }}–{{ s.last_week }}</td>
+            <td class="num">{{ s.weeks_held }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if p.trades %}
+      <div class="card">
+        <table class="dense">
+          <thead><tr><th>Traded</th><th>Week</th><th>Team</th></tr></thead>
+          <tbody>
+          {% for t in p.trades %}
+            <tr>
+              <td><span class="pill">{{ 'to' if t.direction == 'add' else 'from' }}</span></td>
+              <td>{{ t.week }}</td>
+              <td>{{ t.team }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

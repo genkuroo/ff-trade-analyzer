@@ -225,6 +225,27 @@ def team(league_id, roster_id):
     return render_template("team.html", **context)
 
 
+@app.route("/league/<league_id>/player/<player_id>")
+def player(league_id, player_id):
+    conn = db.connect()
+    if not analytics.league_row(conn, league_id):
+        conn.close()
+        abort(404)
+    detail = analytics.player_detail(conn, league_id, player_id)
+    if detail is None:
+        conn.close()
+        abort(404)
+    context = {
+        "summary": analytics.league_summary(conn, league_id),
+        "league_id": league_id,
+        "p": detail,
+        "value_chart": analytics.chart_geometry(detail["history"], "date", "value"),
+        "week_chart": analytics.bar_geometry(detail["weeks"], "week", "points"),
+    }
+    conn.close()
+    return render_template("player.html", **context)
+
+
 @app.route("/healthz")
 def healthz():
     """Liveness probe that also proves the database is readable.

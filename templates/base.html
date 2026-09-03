@@ -110,6 +110,15 @@
     button { background: var(--accent); color: #fff; border-color: transparent;
              font-weight: 600; cursor: pointer; padding: 8px 18px; }
     .err { color: var(--bad); font-size: .875rem; padding: 10px 16px; }
+    .tiles { display: flex; flex-wrap: wrap; }
+    .tile { padding: 14px 20px; border-right: 1px solid var(--gridline); flex: 1 1 8rem; }
+    .tile:last-child { border-right: none; }
+    .tval { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em;
+            font-variant-numeric: tabular-nums; }
+    .tlab { font-size: .75rem; color: var(--muted); text-transform: uppercase;
+            letter-spacing: .04em; margin-top: 2px; }
+    .ctick { fill: var(--muted); font-size: 10px;
+             font-family: var(--font); }
     .scroll { overflow-x: auto; }
     .dense { font-size: .8125rem; white-space: nowrap; }
     .dense th, .dense td { padding: 6px 10px; }

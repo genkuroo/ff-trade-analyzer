@@ -7,14 +7,18 @@
   <h3>{{ s.team }}</h3>
   {% for a in s.assets_in %}
     <div class="asset">
-      <span class="adds">+ {{ a.label }}{% if a.detail %} <span class="slot">{{ a.detail }}</span>{% endif %}</span>
+      <span class="adds">+
+        {% if a.kind == 'player' %}<a href="{{ url_for('player', league_id=league_id, player_id=a.player_id) }}" style="color:inherit">{{ a.label }}</a>
+        {% else %}{{ a.label }}{% endif %}{% if a.detail %} <span class="slot">{{ a.detail }}</span>{% endif %}</span>
       <span class="num">{{ '{:,}'.format(a.value) }}</span>
     </div>
     {% if a.kind != 'player' %}<div class="basis">{{ a.basis }}</div>{% endif %}
   {% endfor %}
   {% for a in s.assets_out %}
     <div class="asset">
-      <span class="drops">− {{ a.label }}{% if a.detail %} <span class="slot">{{ a.detail }}</span>{% endif %}</span>
+      <span class="drops">−
+        {% if a.kind == 'player' %}<a href="{{ url_for('player', league_id=league_id, player_id=a.player_id) }}" style="color:inherit">{{ a.label }}</a>
+        {% else %}{{ a.label }}{% endif %}{% if a.detail %} <span class="slot">{{ a.detail }}</span>{% endif %}</span>
       <span class="num">{{ '{:,}'.format(a.value) }}</span>
     </div>
     {% if a.kind != 'player' %}<div class="basis">{{ a.basis }}</div>{% endif %}

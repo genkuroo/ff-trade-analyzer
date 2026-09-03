@@ -107,7 +107,10 @@
                 {% for p in team.lineup %}
                   <tr>
                     <td class="lslot">{{ p.slot.replace('_', ' ') }}</td>
-                    <td class="lname">{{ p.name }}</td>
+                    <td class="lname">
+                      <a href="{{ url_for('player', league_id=league_id, player_id=p.player_id) }}"
+                         style="color:inherit">{{ p.name }}</a>
+                    </td>
                     <td class="lval">
                       {% if p.score %}{{ '{:,}'.format(p.score|int) }}
                       {% else %}<span class="slot">unvalued</span>{% endif %}
