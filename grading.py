@@ -726,20 +726,29 @@ def sides_from_ids(conn, league_id: str, mine: int, theirs: int,
 
 
 def roster_board(conn, league_id: str, roster_id: int) -> list[dict]:
-    """Every active player on a roster, priced, best first — for a picker UI."""
+    """Every player on a roster, priced, best first — for a trade-picker UI.
+
+    Deliberately every roster slot, not just ``active``. A taxi-squad rookie or
+    an IR stash is exactly the kind of asset a real trade moves -- often the
+    whole point of the deal -- so excluding them here would make a chunk of the
+    league's actual trade activity impossible to represent. (``active`` is the
+    right filter for a *lineup* -- see ``power_rankings`` -- but this is an
+    inventory of what a team owns, not what it can start.) ``slot`` is returned
+    so the picker can flag a stashed player rather than mixing him in silently.
+    """
     league = analytics.league_row(conn, league_id)
     config_key = analytics.config_key_for(league)
     asof = analytics.latest_value_date(conn, config_key)
     return [
         dict(row)
         for row in conn.execute(
-            """SELECT rs.player_id, p.name, p.position, p.team,
+            """SELECT rs.player_id, rs.slot, p.name, p.position, p.team,
                       COALESCE(pv.value, 0) AS value
                  FROM roster_slots rs
                  JOIN players p ON p.player_id = rs.player_id
                  LEFT JOIN player_values pv ON pv.player_id = rs.player_id
                        AND pv.config_key = ? AND pv.asof_date = ?
-                WHERE rs.league_id = ? AND rs.roster_id = ? AND rs.slot = 'active'
+                WHERE rs.league_id = ? AND rs.roster_id = ?
                   AND rs.snapshot_date =
                       (SELECT MAX(snapshot_date) FROM roster_slots WHERE league_id = ?)
                 ORDER BY value DESC, p.name""",

@@ -110,3 +110,37 @@ def test_an_ambiguous_name_raises_rather_than_guessing(conn):
 def test_an_unknown_name_raises(conn):
     with pytest.raises(grading.ProposalError, match="No rostered player"):
         grading.resolve_player(conn, LEAGUE_ID, "Nobody At All")
+
+
+# -- roster_board ------------------------------------------------------
+#
+# Feeds the trade machine's picker. Has to include everything a team actually
+# owns, not just what it can start -- a taxi-squad rookie or an IR stash is
+# exactly the kind of asset a real trade moves.
+
+
+def test_roster_board_includes_taxi_and_reserve_players(conn):
+    conn.execute(
+        "UPDATE roster_slots SET slot = 'taxi' WHERE league_id = ? AND player_id = 'wr3'",
+        (LEAGUE_ID,),
+    )
+    conn.execute(
+        "UPDATE roster_slots SET slot = 'reserve' WHERE league_id = ? AND player_id = 'rb3'",
+        (LEAGUE_ID,),
+    )
+    conn.commit()
+
+    board = {p["player_id"]: p for p in grading.roster_board(conn, LEAGUE_ID, 1)}
+    assert set(board) == {"qb1", "rb1", "rb3", "wr1", "wr3"}
+    assert board["wr3"]["slot"] == "taxi"
+    assert board["rb3"]["slot"] == "reserve"
+    assert board["qb1"]["slot"] == "active"
+
+
+def test_roster_board_is_all_active_for_a_league_with_no_taxi_or_ir(conn):
+    # The shape of a redraft league: Sleeper's own taxi/reserve fields come
+    # back empty, so ingest never writes anything but 'active' -- this should
+    # behave exactly as it did before taxi/IR support existed, not break.
+    board = grading.roster_board(conn, LEAGUE_ID, 2)
+    assert board
+    assert all(p["slot"] == "active" for p in board)

@@ -191,6 +191,27 @@
     .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
                padding: 12px 16px; }
     .filters label { display: block; }
+    /* Trade-machine roster picker: a real dynasty roster runs 20-25 players,
+       so a bare checkbox list is hard to scan. Search + position narrow it;
+       the fixed height keeps the form compact without hiding anything. */
+    .pf-controls { display: flex; gap: 8px; margin: 6px 0; }
+    .pf-controls input[type="search"] { flex: 1; min-width: 0; font: inherit;
+        padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border);
+        background: var(--surface); color: var(--text-primary); }
+    .pf-controls select { font: inherit; padding: 6px 8px; border-radius: 7px;
+        border: 1px solid var(--border); background: var(--surface);
+        color: var(--text-primary); }
+    .pf-count { font-size: .75rem; color: var(--muted); white-space: nowrap;
+        align-self: center; }
+    .pickbox { max-height: 320px; overflow-y: auto; border: 1px solid var(--border);
+               border-radius: 8px; padding: 2px 4px; }
+    .pf-row.pf-hidden { display: none; }
+    .pf-empty { display: none; padding: 10px 4px; color: var(--muted);
+               font-size: .8125rem; }
+    .stash-tag { font-size: .625rem; text-transform: uppercase; font-weight: 700;
+                letter-spacing: .03em; padding: 1px 5px; border-radius: 4px;
+                margin-left: 5px; border: 1px solid var(--border);
+                color: var(--text-secondary); }
     .raw { color: var(--text-primary); }
     .derived { font-variant-numeric: tabular-nums; }
     .note { font-size: .8125rem; color: var(--muted); padding: 0 16px 12px; }
