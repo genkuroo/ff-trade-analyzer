@@ -185,17 +185,22 @@ def _normalise_map(value, mapping) -> float:
     return (value - low) / (high - low) if high > low else 0.5
 
 
-def faab_dollar_value(conn, league_id: str, config_key: str, asof: str) -> float:
+def faab_dollar_value(conn, league_id: str, config_key: str, asof: str,
+                      ranked: list[dict] | None = None) -> float:
     """What one FAAB dollar is worth, in the same units as player value.
 
     Anchored on the idea that spending a full budget should buy roughly the
     weakest player anyone is actually starting: that is what the money is *for*.
     Deriving it from the league's own lineups keeps it honest across leagues
     with different budgets and different depth, rather than hardcoding a rate.
+
+    ``ranked`` lets a caller that already has ``power_rankings`` hand it in
+    rather than pay for that query a second time -- the trade machine calls
+    this on every keystroke, so the duplicate was not free.
     """
-    league = analytics.league_row(conn, league_id)
     budget = 100
-    ranked = analytics.power_rankings(conn, league_id)
+    if ranked is None:
+        ranked = analytics.power_rankings(conn, league_id)
     startable = [
         p["score"] for team in ranked for p in team["lineup"] if p["score"] > 0
     ]

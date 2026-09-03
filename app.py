@@ -97,9 +97,11 @@ def machine(league_id):
     into the league chat and everyone sees the same thing.
     """
     conn = db.connect()
-    if not analytics.league_row(conn, league_id):
+    league = analytics.league_row(conn, league_id)
+    if not league:
         conn.close()
         abort(404)
+    config_key = analytics.config_key_for(league)
 
     teams = analytics.power_rankings(conn, league_id)
     ids = [t["roster_id"] for t in teams]
@@ -143,6 +145,18 @@ def machine(league_id):
         "get_picks": set(get_picks),
         "give_faab": give_faab,
         "get_faab": get_faab,
+        # Points one FAAB dollar is worth, so the page can total a running
+        # "value sent vs. value received" the instant a box is checked --
+        # before the debounced re-fetch below even fires, using the exact same
+        # per-asset values already on the page. Computed unconditionally
+        # (not only when a full trade exists) so it is ready for the first
+        # checkbox click, and handed `teams` so it does not pay for
+        # power_rankings a second time on a route that reruns every keystroke.
+        "faab_rate": grading.faab_dollar_value(
+            conn, league_id, config_key,
+            analytics.latest_value_date(conn, config_key),
+            ranked=teams,
+        ),
         "result": result,
         "error": error,
     }

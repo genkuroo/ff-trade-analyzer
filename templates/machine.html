@@ -22,7 +22,8 @@
        replaceWith never executes embedded <script> tags, so a controller that
        needs to survive every swap has to sit outside the thing being swapped. -->
   <div id="machine-app">
-    <form id="tradeform" method="get" class="card" style="padding:16px">
+    <form id="tradeform" method="get" class="card" style="padding:16px"
+          data-faab-rate="{{ faab_rate }}">
       {% set mine_team = teams|selectattr('roster_id', 'equalto', mine)|first %}
       {% set their_team = teams|selectattr('roster_id', 'equalto', theirs)|first %}
       <div class="picker" style="margin-bottom:12px">
@@ -58,6 +59,28 @@
         </div>
       </div>
 
+      <!-- The running total below is not an estimate: it sums the exact same
+           per-asset values already rendered in the pickers, so it always
+           matches the server-graded VALUE line below once that arrives --
+           this just shows it the instant a box is checked, before the
+           debounced re-fetch even has a chance to run. -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="tiles">
+          <div class="tile">
+            <div class="tval" data-sum="mine">0</div>
+            <div class="tlab">you send</div>
+          </div>
+          <div class="tile">
+            <div class="tval" data-sum="theirs">0</div>
+            <div class="tlab">you receive</div>
+          </div>
+          <div class="tile">
+            <div class="tval" data-delta>—</div>
+            <div class="tlab">net for you</div>
+          </div>
+        </div>
+      </div>
+
       <div class="picker">
         <div>
           <div class="slot" style="margin-bottom:4px">
@@ -77,6 +100,7 @@
               <label class="pf-row" data-name="{{ p.name|lower }}" data-pos="{{ p.position }}">
                 <span>
                   <input type="checkbox" name="give" value="{{ p.player_id }}"
+                         data-value="{{ p.value }}"
                          {{ 'checked' if p.player_id in give }}>
                   {{ p.name }} <span class="slot">{{ p.position }} {{ p.team }}</span>
                   {% if p.slot == 'taxi' %}<span class="stash-tag">taxi</span>
@@ -106,6 +130,7 @@
               <label class="pf-row" data-name="{{ p.name|lower }}" data-pos="{{ p.position }}">
                 <span>
                   <input type="checkbox" name="get" value="{{ p.player_id }}"
+                         data-value="{{ p.value }}"
                          {{ 'checked' if p.player_id in get }}>
                   {{ p.name }} <span class="slot">{{ p.position }} {{ p.team }}</span>
                   {% if p.slot == 'taxi' %}<span class="stash-tag">taxi</span>
@@ -126,6 +151,7 @@
             <label>
               <span>
                 <input type="checkbox" name="givepick" value="{{ p.key }}"
+                       data-value="{{ p.value }}"
                        {{ 'checked' if p.key in give_picks }}>
                 {{ p.label }}
                 {% if p.origin %}<span class="slot">{{ p.origin }}</span>{% endif %}
@@ -142,6 +168,7 @@
             <label>
               <span>
                 <input type="checkbox" name="getpick" value="{{ p.key }}"
+                       data-value="{{ p.value }}"
                        {{ 'checked' if p.key in get_picks }}>
                 {{ p.label }}
                 {% if p.origin %}<span class="slot">{{ p.origin }}</span>{% endif %}
@@ -246,6 +273,43 @@
         });
       }
 
+      function updateLiveSum() {
+        // Not an estimate: sums the exact per-asset values already sitting in
+        // the DOM (data-value, set from the same numbers the server prices
+        // everything at), so it is always the same figure the server's VALUE
+        // line shows once the debounced re-fetch below catches up -- just
+        // available the instant a box is checked, with no network round trip.
+        const app = document.getElementById(APP_ID);
+        const form = document.getElementById("tradeform");
+        if (!app || !form) return;
+        const rate = parseFloat(form.dataset.faabRate || "0");
+
+        function sideSum(name) {
+          let total = 0;
+          app.querySelectorAll('input[name="' + name + '"][data-value]').forEach(function (cb) {
+            if (cb.checked) total += parseFloat(cb.dataset.value) || 0;
+          });
+          return total;
+        }
+
+        const giveFaab = parseFloat((document.getElementById("givefaab") || {}).value) || 0;
+        const getFaab = parseFloat((document.getElementById("getfaab") || {}).value) || 0;
+        const mine = sideSum("give") + sideSum("givepick") + giveFaab * rate;
+        const theirs = sideSum("get") + sideSum("getpick") + getFaab * rate;
+
+        const mineEl = app.querySelector('[data-sum="mine"]');
+        const theirsEl = app.querySelector('[data-sum="theirs"]');
+        const deltaEl = app.querySelector('[data-delta]');
+        if (mineEl) mineEl.textContent = Math.round(mine).toLocaleString();
+        if (theirsEl) theirsEl.textContent = Math.round(theirs).toLocaleString();
+        if (deltaEl) {
+          const delta = Math.round(theirs - mine);
+          deltaEl.textContent = (delta > 0 ? "+" : "") + delta.toLocaleString();
+          deltaEl.classList.toggle("pos", delta > 0);
+          deltaEl.classList.toggle("neg", delta < 0);
+        }
+      }
+
       function bind() {
         const app = document.getElementById(APP_ID);
         if (!app) return;
@@ -257,10 +321,16 @@
         // give/get/givepick/getpick all use plain checkboxes, so one selector
         // covers players and picks alike.
         app.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
-          cb.addEventListener("change", function () { scheduleRefresh(150); });
+          cb.addEventListener("change", function () {
+            updateLiveSum();       // instant, no network
+            scheduleRefresh(150);  // the authoritative server grade, debounced
+          });
         });
         app.querySelectorAll('input[type="number"]').forEach(function (inp) {
-          inp.addEventListener("input", function () { scheduleRefresh(500); });
+          inp.addEventListener("input", function () {
+            updateLiveSum();
+            scheduleRefresh(500);
+          });
         });
         if (form) {
           form.addEventListener("submit", function (e) {
@@ -269,6 +339,7 @@
           });
         }
         initFilters(app);
+        updateLiveSum();
       }
 
       function scheduleRefresh(delay) {

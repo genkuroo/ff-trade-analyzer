@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import analytics
 import grading
 from conftest import LEAGUE_ID
 
@@ -144,3 +145,21 @@ def test_roster_board_is_all_active_for_a_league_with_no_taxi_or_ir(conn):
     board = grading.roster_board(conn, LEAGUE_ID, 2)
     assert board
     assert all(p["slot"] == "active" for p in board)
+
+
+def test_faab_dollar_value_accepts_a_precomputed_ranked_list(conn):
+    """The machine route calls power_rankings once and hands it in here, so
+    this must not silently ignore that and recompute its own -- accepting a
+    stale or mismatched list would only surface as a wrong number, not a
+    crash, so the two paths are checked to agree exactly."""
+    league = analytics.league_row(conn, LEAGUE_ID)
+    config_key = analytics.config_key_for(league)
+    asof = analytics.latest_value_date(conn, config_key)
+    ranked = analytics.power_rankings(conn, LEAGUE_ID)
+
+    computed_fresh = grading.faab_dollar_value(conn, LEAGUE_ID, config_key, asof)
+    computed_reused = grading.faab_dollar_value(
+        conn, LEAGUE_ID, config_key, asof, ranked=ranked
+    )
+    assert computed_fresh == computed_reused
+    assert computed_reused > 0
