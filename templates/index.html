@@ -72,9 +72,11 @@
   <h2>{{ 'Roster value, looking forward' if season else 'Power rankings' }}</h2>
   <p class="sub">
     Ranked by <strong>lineup value</strong> — the best legal starting lineup a team
-    could field today, not the sum of everyone they own. The gap between lineup and
-    total value is depth that cannot be started, which is what makes a team a
-    consolidation trade candidate.
+    could field today, not the sum of everyone they own. The bar under each team
+    shows their lineup value as a share of the league's best
+    ({{ '{:,}'.format(rankings[0].lineup_value|int) if rankings else 0 }}). The gap
+    between lineup and total value is depth that cannot be started, which is what
+    makes a team a consolidation trade candidate.
   </p>
 
   <div class="card">
@@ -100,7 +102,13 @@
               <a href="{{ url_for('team', league_id=league_id, roster_id=team.roster_id) }}"
                  style="color:inherit">{{ team.team }}</a>
             </div>
-            <div class="bar" style="width: {{ (team.lineup_value / top * 100)|round(1) }}%"></div>
+            {% set pct = ((team.lineup_value / top * 100)|round)|int %}
+            <div class="rankbar" title="{{ pct }}% of the league's best lineup ({{ '{:,}'.format(top|int) }})">
+              <div class="rankbar-track">
+                <div class="rankbar-fill" style="width: {{ pct }}%"></div>
+              </div>
+              <span class="rankbar-pct">{{ pct }}%</span>
+            </div>
             <details>
               <summary>lineup</summary>
               <table class="lineup">

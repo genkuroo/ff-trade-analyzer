@@ -32,11 +32,24 @@
     body { margin: 0; background: var(--page); color: var(--text-primary);
            font-family: var(--font); line-height: 1.5;
            -webkit-font-smoothing: antialiased; }
-    .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
-    header { display: flex; align-items: baseline; justify-content: space-between;
-             gap: 16px; flex-wrap: wrap; }
-    h1 { font-size: 1.5rem; margin: 0; letter-spacing: -0.01em; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 64px; }
+    header { display: flex; align-items: flex-start; justify-content: space-between;
+             gap: 16px; flex-wrap: wrap; padding: 30px 0 22px;
+             border-bottom: 1px solid var(--gridline); margin-bottom: 4px; }
+    .eyebrow { font-size: .6875rem; font-weight: 700; text-transform: uppercase;
+               letter-spacing: .08em; color: var(--accent); margin: 0 0 4px; }
+    h1 { font-size: 2.25rem; font-weight: 800; margin: 0; letter-spacing: -0.02em;
+         line-height: 1.1; }
     h1 a { color: inherit; text-decoration: none; }
+    h1 a:hover { color: var(--accent); }
+    .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .badge { display: inline-flex; align-items: center; font-size: .75rem;
+             font-weight: 600; padding: 4px 10px; border-radius: 999px;
+             background: var(--raised); color: var(--text-secondary);
+             border: 1px solid var(--border); }
+    .badge.dynasty { background: color-mix(in srgb, var(--accent) 14%, transparent);
+                     color: var(--accent);
+                     border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
     h2 { font-size: 1rem; margin: 34px 0 10px; letter-spacing: 0.02em;
          text-transform: uppercase; color: var(--text-secondary); }
     .sub { color: var(--muted); font-size: .875rem; margin: 2px 0 0; }
@@ -59,7 +72,17 @@
     .rank { color: var(--muted); width: 2.5rem; font-variant-numeric: tabular-nums; }
     .team { font-weight: 600; }
     .asset-name { white-space: nowrap; }
-    .bar { height: 6px; border-radius: 3px; background: var(--accent); min-width: 2px; }
+    /* Lineup-value bar: share of the league's best lineup, as a labeled
+       proportion rather than a bare fill -- a bar with no track, scale, or
+       label reads as decoration, not data. */
+    .rankbar { display: flex; align-items: center; gap: 8px; margin-top: 7px;
+               max-width: 220px; }
+    .rankbar-track { flex: 1; height: 6px; border-radius: 3px;
+                     background: var(--gridline); overflow: hidden; }
+    .rankbar-fill { height: 100%; border-radius: 3px; background: var(--accent);
+                    min-width: 3px; }
+    .rankbar-pct { font-size: .6875rem; color: var(--muted);
+                   font-variant-numeric: tabular-nums; min-width: 2.4em; }
     .slot { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
     .pill { display: inline-block; font-size: .6875rem; text-transform: uppercase;
             letter-spacing: .04em; padding: 2px 7px; border-radius: 999px;
@@ -162,14 +185,23 @@
 
   <header>
     <div>
+      <p class="eyebrow">Fantasy trade analyzer</p>
       <h1><a href="{{ url_for('league', league_id=league_id) }}">{{ summary.name }}</a></h1>
-      <p class="sub">
-        {{ summary.season }} · {{ summary.kind }} · {{ summary.teams }} teams ·
-        {{ summary.trades }} trade{{ '' if summary.trades == 1 else 's' }} ·
-        {{ summary.weeks_scored }} week{{ '' if summary.weeks_scored == 1 else 's' }} scored
-      </p>
+      <div class="badges">
+        <span class="badge {{ 'dynasty' if summary.kind == 'dynasty' }}">{{ summary.kind }}</span>
+        <span class="badge">{{ summary.season }}</span>
+        <span class="badge">{{ summary.teams }} teams</span>
+        <span class="badge">
+          {{ summary.trades }} trade{{ '' if summary.trades == 1 else 's' }}
+        </span>
+        <span class="badge">
+          {{ summary.weeks_scored }} week{{ '' if summary.weeks_scored == 1 else 's' }} scored
+        </span>
+      </div>
     </div>
-    <span class="pill">values {{ summary.value_date or 'none' }}</span>
+    <span class="pill" style="font-size:.75rem;padding:5px 12px">
+      values as of {{ summary.value_date or 'none' }}
+    </span>
   </header>
 
   <nav>
