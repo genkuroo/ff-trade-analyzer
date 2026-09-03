@@ -246,6 +246,93 @@ def player(league_id, player_id):
     return render_template("player.html", **context)
 
 
+# -- JSON API -------------------------------------------------------------
+#
+# Consumed by the Discord bot, which runs in its own container and its own repo.
+# It deliberately talks HTTP rather than importing this code or mounting this
+# volume: two services sharing a SQLite file is a good way to get a locked
+# database, and sharing code would couple two repos that have no other reason to
+# know about each other. The bot stays a presentation layer.
+#
+# Read-only by construction — there is no write path anywhere in this app.
+
+
+def _api_league(conn, league_id):
+    """Resolve a league for an API call, defaulting to the only one synced."""
+    if league_id:
+        return league_id if analytics.league_row(conn, league_id) else None
+    leagues = analytics.all_leagues(conn)
+    return leagues[0]["league_id"] if leagues else None
+
+
+@app.route("/api/power")
+def api_power():
+    conn = db.connect()
+    league_id = _api_league(conn, request.args.get("league"))
+    if not league_id:
+        conn.close()
+        return {"error": "no such league"}, 404
+    payload = {
+        "league": analytics.league_summary(conn, league_id),
+        # Empty in the preseason, which the caller should render as "no games
+        # yet" rather than as a table of zeroes.
+        "season": analytics.season_report(conn, league_id),
+        "value": [
+            {k: v for k, v in team.items() if k != "lineup"}
+            for team in analytics.power_rankings(conn, league_id)
+        ],
+    }
+    conn.close()
+    return payload
+
+
+@app.route("/api/trades")
+def api_trades():
+    conn = db.connect()
+    league_id = _api_league(conn, request.args.get("league"))
+    if not league_id:
+        conn.close()
+        return {"error": "no such league"}, 404
+    trades = grading.completed_trades(conn, league_id)
+    for trade in trades:
+        trade["retro"] = retro.retrospective(conn, league_id, trade["txn_id"])
+    conn.close()
+    return {"trades": trades}
+
+
+@app.route("/api/propose")
+def api_propose():
+    """Grade a hypothetical from player names, so a chat command can pass text.
+
+    Names rather than ids on purpose: the caller is someone typing into Discord,
+    and resolving a name against the league's own rosters is this service's job,
+    not theirs.
+    """
+    conn = db.connect()
+    league_id = _api_league(conn, request.args.get("league"))
+    if not league_id:
+        conn.close()
+        return {"error": "no such league"}, 404
+    try:
+        sides = grading.build_proposal(
+            conn, league_id,
+            give=request.args.getlist("give"),
+            get=request.args.getlist("get"),
+            from_team=request.args.get("from"),
+            to_team=request.args.get("to"),
+            give_picks=request.args.getlist("givepick"),
+            get_picks=request.args.getlist("getpick"),
+            give_faab=request.args.get("givefaab", type=int) or 0,
+            get_faab=request.args.get("getfaab", type=int) or 0,
+        )
+        result = grading.grade(conn, league_id, sides, applied=False)
+    except grading.ProposalError as exc:
+        conn.close()
+        return {"error": str(exc)}, 400
+    conn.close()
+    return result
+
+
 @app.route("/healthz")
 def healthz():
     """Liveness probe that also proves the database is readable.

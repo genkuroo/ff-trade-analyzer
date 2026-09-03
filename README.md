@@ -94,7 +94,7 @@ between judging a decision and judging with hindsight.
 | 3 | Retrospective grade (counterfactual lineup replay) | done |
 | 4 | Power rankings with luck adjustment | done |
 | 5 | Flask dashboard | done |
-| 6 | Discord slash commands in `sleeper-discord-bot` | |
+| 6 | Discord slash commands in `sleeper-discord-bot` | done |
 
 Phase 5 landed early in skeleton form because the app is self-hosted: there has
 to be something for the Pi to serve. It currently shows power rankings and
@@ -373,6 +373,25 @@ sources/
 scripts/
   seed_demo.py  synthetic league + trades, for demoing the grader
 ```
+
+## Talking to the Discord bot
+
+`sleeper-discord-bot` adds `/power`, `/tradecheck` and `/grades`, backed by a
+small read-only JSON API here (`/api/power`, `/api/propose`, `/api/trades`).
+
+It talks HTTP rather than importing this code or mounting this volume. Two
+processes writing one SQLite file is how you get a locked database, and sharing
+code would couple two repos that otherwise have no reason to know about each
+other — the bot stays a presentation layer over someone else's numbers. They
+meet on an internal `analytics` docker network with no host ports and no tunnel.
+
+The dependency is optional in the right direction: with `FFTA_URL` unset the
+grading commands say so and the bot's actual job, announcing transactions,
+carries on untouched.
+
+`/api/propose` takes player *names*, not ids, because the caller is someone
+typing into Discord — resolving a name against the league's rosters is this
+service's job, not theirs.
 
 ## Deployment
 
