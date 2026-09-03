@@ -6,3 +6,4 @@ data/cache/
 .env
 config.json
 demo.db
+.pytest_cache/

@@ -1,0 +1,4 @@
+# Everything the app needs, plus the test runner. CI installs from this file
+# alone, so the suite is proven to run on a clean machine.
+-r requirements.txt
+pytest

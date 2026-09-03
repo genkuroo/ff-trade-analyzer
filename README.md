@@ -325,6 +325,35 @@ a FLEX), which at real lineup sizes gives the true optimum without a
 combinatorial search. It is written to be reused: phase 3 replays a week's
 scoring with and without a trade using the same function.
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+70 tests, no network. Every one builds a throwaway SQLite database from a small
+synthetic league — four teams, a five-slot lineup, round numbers — so a failure
+is readable and a flaky upstream API can never turn the build red. The suite is
+verified to pass with all outbound sockets blocked.
+
+They lean deliberately toward the mistakes that actually shipped and were then
+found by hand, because each produced a number that looked entirely reasonable:
+
+- a fit calculation that returned exactly `+0` for a clear upgrade, because the
+  proposal path had its before/after states inverted;
+- a retrospective that measured the swing on optimal lineups and then applied it
+  to the actual score, inventing flipped games for a player who never left the
+  bench;
+- a verdict that read "no games changed hands" while listing two that did;
+- a schema migration the web app never ran, so adding a table served 500s.
+
+Writing the suite turned up a fifth: the flipped-game check compared Sleeper's
+official team score against a total computed from player rows. Those normally
+agree, but corrections and bonuses land on the team total — and when they
+diverge, a week with a swing of exactly zero could report a flipped game. The
+invariant *"a zero-swing week can never flip a game"* is now a test.
+
 ## Setup
 
 ```bash

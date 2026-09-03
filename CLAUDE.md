@@ -112,6 +112,17 @@ Two external sources, both free and keyless:
   no trade value. They are kept in the lineup at zero rather than dropped, so
   their slots don't read as unfillable.
 
+## Tests
+
+`pytest` — 70 tests, no network. `tests/conftest.py` builds a four-team league
+with round numbers directly in SQLite; every test gets its own throwaway file
+via the `db_path` fixture, which rebinds `db.DB_PATH` (the module caches it at
+import, so setting the env var alone is not enough).
+
+Do not add a test that touches Sleeper or FantasyCalc. The suite is verified to
+pass with sockets blocked, and that property is what makes a red build mean
+something.
+
 ## Conventions
 
 Follows the workspace rules in `../CLAUDE.md` — notably **no AI attribution in

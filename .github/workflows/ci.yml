@@ -1,0 +1,73 @@
+# ci.yml — checks only. There is deliberately no CD half.
+#
+#   tests  — on every push and PR: does the suite still pass on a clean machine
+#            built from requirements-dev.txt alone?
+#   image  — does the container still build for linux/arm64, the Pi's
+#            architecture? Built, never pushed.
+#
+# Why no deploy job: this runs on a Raspberry Pi behind NAT, with no inbound
+# ingress for a runner to reach. More to the point, a push to GitHub should not
+# silently restart a service a live fantasy league is reading — deployment is a
+# deliberate `git pull` and `docker compose up -d --build ffta` on the Pi. CI's
+# job ends at "the code is good".
+#
+# Nothing here needs a secret. The tests never touch the network: no Sleeper, no
+# FantasyCalc, no live database. Every one builds its own throwaway SQLite file
+# from a small synthetic league, so a fork's PR can run the full suite safely
+# and a flaky upstream API can never turn the build red.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # --- 1. Tests -------------------------------------------------------------
+  # Python 3.12 to match the Dockerfile's base image. Testing on whatever
+  # version the runner defaults to would let a 3.12 incompatibility ship.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run the suite
+        run: pytest -v
+
+  # --- 2. Image -------------------------------------------------------------
+  # The deploy target is a Pi 400, so amd64 building fine proves little. QEMU
+  # lets the runner build the arm64 image the Pi will actually run.
+  #
+  # push: false — this repo publishes no image. The Pi builds from source via
+  # the compose build context, so CI only needs to answer "would that build
+  # succeed?" before you find out over SSH.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build for the Pi's architecture
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

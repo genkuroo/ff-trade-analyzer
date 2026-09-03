@@ -427,10 +427,17 @@ def _flipped_games(conn, league_id, results, weeks) -> dict:
                 if not entry:
                     continue
                 real_win = (me["points"] or 0) > (them["points"] or 0)
-                # Uses the actual-basis counterfactual score directly. Deriving
-                # it from the optimal-basis swing would invent flips for players
-                # who never left the bench.
-                without = entry["without_trade"]
+                # Apply the swing to the official score rather than swapping in
+                # a number computed from player rows. Sleeper's team total can
+                # differ from the sum of its own starters -- corrections and
+                # bonuses land on the total -- and substituting one for the
+                # other compares two different things, which reports flips on
+                # weeks whose swing is exactly zero.
+                #
+                # This is only safe because `swing` is actual-basis. Derived
+                # from the optimal-basis swing it would invent flips for players
+                # who never left the bench, which is the bug that came first.
+                without = round((me["points"] or 0) - entry["swing"], 2)
                 hypo_win = without > (them["points"] or 0)
                 if real_win != hypo_win:
                     flips[rid].append(
