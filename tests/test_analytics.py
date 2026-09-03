@@ -105,3 +105,83 @@ def test_power_rankings_rank_by_startable_lineup_not_roster_total(conn):
     # Depth that cannot be started still counts toward total value.
     for team in ranked:
         assert team["total_value"] >= team["lineup_value"]
+
+
+def test_no_trend_without_a_second_snapshot(conn):
+    ranked = analytics.power_rankings(conn, LEAGUE_ID)
+    assert all(t["trend_available"] is False for t in ranked)
+    assert all(t["lineup_delta"] is None for t in ranked)
+
+
+def _freeze_prices(conn, player_ids, on_date):
+    """Copy today's value for each player onto an earlier date, unchanged.
+
+    Isolates a test to the one price move it actually cares about -- without
+    this, any roster player missing an earlier-date row defaults to a value of
+    zero on that date (the same COALESCE the app itself uses), which swamps
+    the comparison with a fake price crash.
+    """
+    for pid in player_ids:
+        conn.execute(
+            """INSERT INTO player_values (asof_date, config_key, player_id, value,
+                                          overall_rank, position_rank)
+               VALUES (?, ?, ?,
+                       (SELECT value FROM player_values
+                         WHERE config_key = ? AND asof_date = ? AND player_id = ?),
+                       1, 1)""",
+            (on_date, CONFIG_KEY, pid, CONFIG_KEY, ASOF, pid),
+        )
+
+
+def test_trend_reflects_a_price_move_on_the_same_roster(conn):
+    # Roster 1 (qb1, rb1, rb3, wr1, wr3) exactly fills its five lineup slots,
+    # so every one of them starts. Freeze all five, then move only rb1.
+    _freeze_prices(conn, ["qb1", "rb1", "rb3", "wr1", "wr3"], "2026-08-24")
+    conn.execute(
+        "UPDATE player_values SET value = 7000 "
+        "WHERE config_key = ? AND asof_date = '2026-08-24' AND player_id = 'rb1'",
+        (CONFIG_KEY,),
+    )
+    conn.commit()
+
+    team = next(t for t in analytics.power_rankings(conn, LEAGUE_ID) if t["roster_id"] == 1)
+    assert team["trend_available"] is True
+    assert team["trend_from"] == "2026-08-24"
+    # rb1 was 9000, is now still 9000 today; nine days ago it was 7000.
+    assert team["lineup_delta"] == 2000
+    assert team["bench_delta"] == 0
+
+
+def test_bench_delta_is_separate_from_lineup_delta(conn):
+    """A player who never starts should move bench_delta, not lineup_delta."""
+    _freeze_prices(conn, ["qb1", "rb1", "rb3", "wr1", "wr3"], "2026-08-24")
+    # A sixth player, added only to this test, priced low enough that it can
+    # never beat the five players who already fill every slot -- so it sits on
+    # the bench at both dates regardless of its own price.
+    conn.execute(
+        "INSERT INTO players (player_id, name, position, team, age) "
+        "VALUES ('bench1', 'Bench Player', 'RB', 'NFL', 24)"
+    )
+    conn.execute(
+        "INSERT INTO roster_slots (league_id, snapshot_date, roster_id, player_id, slot) "
+        "VALUES (?, ?, 1, 'bench1', 'active')",
+        (LEAGUE_ID, ASOF),
+    )
+    conn.execute(
+        "INSERT INTO player_values (asof_date, config_key, player_id, value, overall_rank, position_rank) "
+        "VALUES (?, ?, 'bench1', 100, 1, 1)",
+        (ASOF, CONFIG_KEY),
+    )
+    conn.execute(
+        "INSERT INTO player_values (asof_date, config_key, player_id, value, overall_rank, position_rank) "
+        "VALUES ('2026-08-24', ?, 'bench1', 300, 1, 1)",
+        (CONFIG_KEY,),
+    )
+    conn.commit()
+
+    team = next(t for t in analytics.power_rankings(conn, LEAGUE_ID) if t["roster_id"] == 1)
+    assert team["lineup_delta"] == 0
+    assert team["bench_delta"] == 100 - 300
+
+
+

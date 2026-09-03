@@ -87,6 +87,7 @@
           <th>Team</th>
           <th>Record</th>
           <th class="num">Lineup value</th>
+          <th>Trend</th>
           <th class="num">Total value</th>
           <th class="num">Depth×</th>
           <th>Best asset</th>
@@ -135,6 +136,20 @@
           </td>
           <td>{{ team.record }}</td>
           <td class="num">{{ '{:,}'.format(team.lineup_value|int) }}</td>
+          <td>
+            {% if team.trend_available %}
+              <div class="trend" title="Bench/depth value: {{ '{:+,}'.format(team.bench_delta|int) }} since {{ team.trend_from }}">
+                <span class="trend-arrow {{ 'pos' if team.lineup_delta > 0 else ('neg' if team.lineup_delta < 0 else '') }}">
+                  {% if team.lineup_delta > 0 %}▲{% elif team.lineup_delta < 0 %}▼{% else %}—{% endif %}
+                </span>
+                <span class="{{ 'pos' if team.lineup_delta > 0 else ('neg' if team.lineup_delta < 0 else '') }}">
+                  {{ '{:+.1%}'.format(team.lineup_delta_pct) if team.lineup_delta_pct is not none else '—' }}
+                </span>
+              </div>
+            {% else %}
+              <span class="slot">—</span>
+            {% endif %}
+          </td>
           <td class="num">{{ '{:,}'.format(team.total_value|int) }}</td>
           <td class="num">{{ team.depth_ratio }}</td>
           <td class="asset-name">{{ team.best_player }}</td>

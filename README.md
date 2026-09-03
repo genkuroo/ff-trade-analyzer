@@ -314,6 +314,20 @@ validated for colour-blindness (CVD ΔE 27.9 protan, well above the 8 threshold)
 and the number is always printed next to the bar, so nothing rests on colour
 alone.
 
+### Trend
+
+Each team's lineup value carries a **7-day trend**: a green ▲ or red ▼ against
+how much their startable lineup has moved, with bench/depth movement broken out
+separately in the tooltip. Unlike luck (deliberately neutral, since being
+unlucky is not a failure) a value trend is a genuinely good/bad axis, so it uses
+the ordinary green/red tokens rather than the neutral warm/cool pair.
+
+Bench and lineup are reported apart because they answer different questions: a
+team can be getting stronger where it counts while its unstartable depth quietly
+loses value, or the reverse — and blending them would hide exactly that. With
+fewer than two value snapshots on record there is nothing to compare yet, shown
+as a plain dash rather than a fabricated zero.
+
 ### Power rankings
 
 Teams are ranked by **lineup value** — the best legal starting lineup they could

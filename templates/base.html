@@ -83,6 +83,12 @@
                     min-width: 3px; }
     .rankbar-pct { font-size: .6875rem; color: var(--muted);
                    font-variant-numeric: tabular-nums; min-width: 2.4em; }
+    /* Trend chip: has a market-value job (gaining/losing value is genuinely
+       good/bad, unlike luck), so unlike the luck meter this one uses the
+       ordinary good/bad tokens rather than the neutral warm/cool pair. */
+    .trend { display: flex; align-items: center; gap: 5px; font-size: .875rem;
+             font-variant-numeric: tabular-nums; cursor: default; }
+    .trend-arrow { font-size: .6875rem; }
     .slot { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
     .pill { display: inline-block; font-size: .6875rem; text-transform: uppercase;
             letter-spacing: .04em; padding: 2px 7px; border-radius: 999px;

@@ -15,6 +15,11 @@ from __future__ import annotations
 
 import json
 
+# How far back power_rankings looks to compute each team's value trend.
+# Matches the default window on the players page, so "how has this team moved"
+# and "how has this player moved" answer the same question.
+TREND_WINDOW_DAYS = 7
+
 # Which real positions may fill each lineup slot. Sleeper's own slot names.
 SLOT_ELIGIBILITY = {
     "QB": {"QB"},
@@ -115,6 +120,18 @@ def power_rankings(conn, league_id: str) -> list[dict]:
     Kickers and defenses come back unvalued from the market data (they have no
     trade value), so they contribute zero to both numbers rather than being
     dropped -- otherwise their lineup slots would look unfillable.
+
+    Each team also carries a **trend**: how its lineup value and its bench
+    (depth) value have moved since an earlier snapshot, using the roster as it
+    stands today priced at two different dates -- the same method
+    ``player_report`` uses for a single player, just run through the lineup
+    solver so it reflects the team's actual starters rather than a raw sum.
+    Bench movement is reported separately from lineup movement because they
+    answer different questions: a team can be getting stronger where it counts
+    (lineup) while its unstartable depth quietly loses value, or the reverse.
+    With fewer than two snapshots on record there is nothing to compare, and
+    that is reported as ``trend_available: False`` rather than a fabricated
+    zero.
     """
     league = league_row(conn, league_id)
     if not league:
@@ -124,17 +141,24 @@ def power_rankings(conn, league_id: str) -> list[dict]:
     slots = starting_slots(json.loads(league["roster_positions"]))
     snapshot = _latest_roster_date(conn, league_id)
 
+    earlier = value_asof(conn, key, _shift(asof, TREND_WINDOW_DAYS)) if asof else None
+    trend_available = bool(earlier and earlier != asof)
+
     rows = conn.execute(
         """SELECT rs.roster_id, rs.player_id, rs.slot AS roster_slot,
                   p.name, p.position, p.team, p.age,
-                  COALESCE(pv.value, 0) AS value
+                  COALESCE(pv.value, 0) AS value,
+                  COALESCE(pv_then.value, 0) AS value_then
              FROM roster_slots rs
              JOIN players p ON p.player_id = rs.player_id
              LEFT JOIN player_values pv
                     ON pv.player_id = rs.player_id
                    AND pv.config_key = ? AND pv.asof_date = ?
+             LEFT JOIN player_values pv_then
+                    ON pv_then.player_id = rs.player_id
+                   AND pv_then.config_key = ? AND pv_then.asof_date = ?
             WHERE rs.league_id = ? AND rs.snapshot_date = ?""",
-        (key, asof, league_id, snapshot),
+        (key, asof, key, earlier or asof, league_id, snapshot),
     ).fetchall()
 
     managers = {
@@ -161,6 +185,27 @@ def power_rankings(conn, league_id: str) -> list[dict]:
             if p["roster_slot"] == "active"
         ]
         lineup, lineup_value = best_lineup(startable, slots)
+        total_value = sum(p["value"] for p in players)
+
+        lineup_delta = lineup_delta_pct = bench_delta = None
+        if trend_available:
+            startable_then = [
+                {"player_id": p["player_id"], "position": p["position"],
+                 "score": p["value_then"]}
+                for p in players
+                if p["roster_slot"] == "active"
+            ]
+            _, lineup_value_then = best_lineup(startable_then, slots)
+            total_value_then = sum(p["value_then"] for p in players)
+            lineup_delta = lineup_value - lineup_value_then
+            lineup_delta_pct = (
+                round(lineup_delta / lineup_value_then, 4) if lineup_value_then else None
+            )
+            # What moved outside the lineup -- depth gaining or losing value
+            # while the starters stayed flat is a different signal than the
+            # lineup itself moving.
+            bench_delta = (total_value - lineup_value) - (total_value_then - lineup_value_then)
+
         ranked.append(
             {
                 "roster_id": roster_id,
@@ -171,13 +216,18 @@ def power_rankings(conn, league_id: str) -> list[dict]:
                 "record": _record(manager),
                 "points_for": manager["points_for"] if manager else 0.0,
                 "lineup_value": lineup_value,
-                "total_value": sum(p["value"] for p in players),
+                "total_value": total_value,
                 "lineup": lineup,
                 "best_player": max(players, key=lambda p: p["value"])["name"]
                 if players else "",
                 "depth_ratio": round(
-                    (sum(p["value"] for p in players) or 1) / (lineup_value or 1), 2
+                    (total_value or 1) / (lineup_value or 1), 2
                 ),
+                "trend_available": trend_available,
+                "trend_from": earlier,
+                "lineup_delta": lineup_delta,
+                "lineup_delta_pct": lineup_delta_pct,
+                "bench_delta": bench_delta,
             }
         )
 
