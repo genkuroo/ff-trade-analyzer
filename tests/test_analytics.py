@@ -236,3 +236,33 @@ def test_league_summary_carries_the_league_avatar(conn):
     assert analytics.league_summary(conn, LEAGUE_ID)["avatar"] == (
         "https://sleepercdn.com/avatars/thumbs/league123"
     )
+
+
+def test_avatar_fallback_takes_the_first_alphanumeric_character():
+    assert analytics.avatar_fallback("lukebeaton1111", 7)["initial"] == "L"
+    assert analytics.avatar_fallback("  99ers", 1)["initial"] == "9"
+    assert analytics.avatar_fallback("", 1)["initial"] == "?"
+    assert analytics.avatar_fallback(None, 1)["initial"] == "?"
+
+
+def test_avatar_fallback_color_is_keyed_to_roster_id_not_name():
+    # A rename must not reshuffle the colour -- same roster, same slot.
+    before = analytics.avatar_fallback("Old Name", 3)
+    after = analytics.avatar_fallback("Totally Different Name", 3)
+    assert before["color_index"] == after["color_index"]
+
+
+def test_avatar_fallback_color_index_is_in_range():
+    for roster_id in range(50):
+        assert 0 <= analytics.avatar_fallback("x", roster_id)["color_index"] < analytics.AVATAR_PALETTE_SIZE
+
+
+def test_power_rankings_always_carries_a_fallback_even_with_a_real_avatar(conn):
+    conn.execute(
+        "UPDATE managers SET avatar_id = 'abc123' WHERE league_id = ? AND roster_id = 1",
+        (LEAGUE_ID,),
+    )
+    conn.commit()
+    team = next(t for t in analytics.power_rankings(conn, LEAGUE_ID) if t["roster_id"] == 1)
+    assert team["avatar"] is not None
+    assert team["avatar_fallback"]["initial"]

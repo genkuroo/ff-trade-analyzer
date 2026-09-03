@@ -23,6 +23,8 @@
         <div class="team-cell" style="margin-top:4px">
           {% if mine_team and mine_team.avatar %}
             <img class="avatar" src="{{ mine_team.avatar }}" alt="" loading="lazy">
+          {% elif mine_team %}
+            <span class="avatar avatar-fallback avatar-c{{ mine_team.avatar_fallback.color_index }}">{{ mine_team.avatar_fallback.initial }}</span>
           {% endif %}
           <select name="a" id="a" onchange="this.form.submit()" style="width:100%">
             {% for t in teams %}
@@ -36,6 +38,8 @@
         <div class="team-cell" style="margin-top:4px">
           {% if their_team and their_team.avatar %}
             <img class="avatar" src="{{ their_team.avatar }}" alt="" loading="lazy">
+          {% elif their_team %}
+            <span class="avatar avatar-fallback avatar-c{{ their_team.avatar_fallback.color_index }}">{{ their_team.avatar_fallback.initial }}</span>
           {% endif %}
           <select name="b" id="b" onchange="this.form.submit()" style="width:100%">
             {% for t in teams %}

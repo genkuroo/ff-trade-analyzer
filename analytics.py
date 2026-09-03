@@ -57,6 +57,28 @@ def avatar_url(avatar_id: str | None, size: str = "thumb") -> str | None:
     return f"https://sleepercdn.com/{path}/{avatar_id}"
 
 
+# How many colours the initial-circle fallback rotates through. Fixed and
+# small on purpose -- the CSS defines exactly this many --avatar-N tokens, one
+# set for light mode and one for dark, in the same style as every other themed
+# colour in the app.
+AVATAR_PALETTE_SIZE = 8
+
+
+def avatar_fallback(name: str, roster_id: int) -> dict:
+    """A deterministic initial-circle to show in place of a missing avatar.
+
+    Not every manager sets a Sleeper profile picture -- Sleeper genuinely
+    returns nothing for them, same as their blank icon inside the Sleeper app
+    itself. Leaving the space blank reads as broken; a colour is friendlier.
+
+    Keyed off ``roster_id`` rather than the team name, so a mid-season rename
+    doesn't reshuffle everyone's colour -- the same team keeps the same one for
+    as long as it holds that roster slot.
+    """
+    initial = next((c for c in (name or "").strip().upper() if c.isalnum()), "?")
+    return {"initial": initial, "color_index": roster_id % AVATAR_PALETTE_SIZE}
+
+
 def starting_slots(roster_positions: list[str]) -> list[str]:
     """The scoring slots of a lineup, bench and taxi removed."""
     return [slot for slot in roster_positions if slot not in BENCH_SLOTS]
@@ -224,14 +246,21 @@ def power_rankings(conn, league_id: str) -> list[dict]:
             # lineup itself moving.
             bench_delta = (total_value - lineup_value) - (total_value_then - lineup_value_then)
 
+        team_name = (
+            (manager["team_name"] if manager else None)
+            or (manager["display_name"] if manager else None)
+            or f"Roster {roster_id}"
+        )
         ranked.append(
             {
                 "roster_id": roster_id,
-                "team": (manager["team_name"] if manager else None)
-                or (manager["display_name"] if manager else None)
-                or f"Roster {roster_id}",
+                "team": team_name,
                 "manager": manager["display_name"] if manager else "",
                 "avatar": avatar_url(manager["avatar_id"]) if manager else None,
+                # Used only when there is no real avatar to show. Keyed off
+                # roster_id rather than the name, so it stays the same team's
+                # colour even if they rename mid-season.
+                "avatar_fallback": avatar_fallback(team_name, roster_id),
                 "record": _record(manager),
                 "points_for": manager["points_for"] if manager else 0.0,
                 "lineup_value": lineup_value,

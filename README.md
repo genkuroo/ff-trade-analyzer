@@ -327,6 +327,11 @@ league, not a hypothetical. The render helper passes a value through unchanged
 when it already looks like a URL, rather than mangling it into a broken CDN
 path.
 
+Not every manager sets a Sleeper picture, and Sleeper genuinely returns nothing
+for them — the same blank icon shows in the Sleeper app itself. That renders as
+a coloured initial circle instead of a gap, keyed to `roster_id` rather than the
+team's name so a mid-season rename doesn't reshuffle anyone's colour.
+
 ### Trend
 
 Each team's lineup value carries a **7-day trend**: a green ▲ or red ▼ against

@@ -6,6 +6,8 @@
   <div class="team-head" style="margin-top:20px">
     {% if team.avatar %}
       <img class="avatar-lg" src="{{ team.avatar }}" alt="" loading="lazy">
+    {% else %}
+      <span class="avatar-lg avatar-fallback avatar-c{{ team.avatar_fallback.color_index }}">{{ team.avatar_fallback.initial }}</span>
     {% endif %}
     <h2 style="margin:0">{{ team.team }}</h2>
   </div>

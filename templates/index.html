@@ -102,6 +102,8 @@
             <div class="team team-cell">
               {% if team.avatar %}
                 <img class="avatar" src="{{ team.avatar }}" alt="" loading="lazy">
+              {% else %}
+                <span class="avatar avatar-fallback avatar-c{{ team.avatar_fallback.color_index }}">{{ team.avatar_fallback.initial }}</span>
               {% endif %}
               <a href="{{ url_for('team', league_id=league_id, roster_id=team.roster_id) }}"
                  style="color:inherit">{{ team.team }}</a>

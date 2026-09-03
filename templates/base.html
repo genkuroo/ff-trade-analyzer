@@ -65,6 +65,24 @@
                 flex-shrink: 0; }
     .team-cell { display: flex; align-items: center; gap: 8px; }
     .team-head { display: flex; align-items: center; gap: 12px; }
+    /* Initial-circle fallback for a manager with no Sleeper avatar set --
+       genuinely absent upstream, not a load failure, so a coloured initial
+       reads as intentional rather than broken. Decorative identity, not a
+       data encoding: the letter carries the identity, the colour is only
+       there so ten blank grey circles don't look identical at a glance, so
+       this skips the categorical-palette validator that a real chart needs. */
+    .avatar-fallback { display: inline-flex; align-items: center; justify-content: center;
+                       color: #fff; font-weight: 700; line-height: 1; }
+    .avatar.avatar-fallback { font-size: .6875rem; }
+    .avatar-lg.avatar-fallback { font-size: 1.125rem; }
+    .avatar-c0 { background: hsl(206, 60%, 45%); }
+    .avatar-c1 { background: hsl(340, 55%, 50%); }
+    .avatar-c2 { background: hsl(160, 45%, 38%); }
+    .avatar-c3 { background: hsl(28, 70%, 48%); }
+    .avatar-c4 { background: hsl(265, 45%, 55%); }
+    .avatar-c5 { background: hsl(110, 35%, 38%); }
+    .avatar-c6 { background: hsl(190, 55%, 40%); }
+    .avatar-c7 { background: hsl(15, 60%, 50%); }
     h2 { font-size: 1rem; margin: 34px 0 10px; letter-spacing: 0.02em;
          text-transform: uppercase; color: var(--text-secondary); }
     .sub { color: var(--muted); font-size: .875rem; margin: 2px 0 0; }
