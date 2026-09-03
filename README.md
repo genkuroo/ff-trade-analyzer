@@ -314,6 +314,19 @@ validated for colour-blindness (CVD ΔE 27.9 protan, well above the 8 threshold)
 and the number is always printed next to the bar, so nothing rests on colour
 alone.
 
+### Avatars
+
+Team names carry the manager's Sleeper avatar wherever they appear — power
+rankings, the team page, the trade machine's selectors — and the league's own
+icon sits in the header, if one is set. Only the avatar *id* is stored, never a
+built URL, so a CDN change is a one-line edit rather than a backfill.
+
+One real wrinkle: a manager can upload a custom team logo, and Sleeper then
+returns a full URL in place of the usual opaque id — observed on the live
+league, not a hypothetical. The render helper passes a value through unchanged
+when it already looks like a URL, rather than mangling it into a broken CDN
+path.
+
 ### Trend
 
 Each team's lineup value carries a **7-day trend**: a green ▲ or red ▼ against

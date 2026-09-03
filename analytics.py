@@ -39,6 +39,24 @@ SLOT_ELIGIBILITY = {
 BENCH_SLOTS = {"BN", "TAXI", "IR"}
 
 
+def avatar_url(avatar_id: str | None, size: str = "thumb") -> str | None:
+    """Sleeper's avatar CDN path for a manager's or league's icon.
+
+    Only the id is stored in the database, never a built URL -- so a CDN
+    change is a one-line edit here rather than a backfill of every row. The id
+    is normally an opaque hash, but Sleeper has been observed to let a manager
+    set a custom team avatar as a full URL in ``metadata.avatar`` rather than
+    an uploaded id, so a value that already looks like a URL is passed through
+    unchanged instead of being mangled into a broken CDN path.
+    """
+    if not avatar_id:
+        return None
+    if avatar_id.startswith(("http://", "https://")):
+        return avatar_id
+    path = "avatars/thumbs" if size == "thumb" else "avatars"
+    return f"https://sleepercdn.com/{path}/{avatar_id}"
+
+
 def starting_slots(roster_positions: list[str]) -> list[str]:
     """The scoring slots of a lineup, bench and taxi removed."""
     return [slot for slot in roster_positions if slot not in BENCH_SLOTS]
@@ -213,6 +231,7 @@ def power_rankings(conn, league_id: str) -> list[dict]:
                 or (manager["display_name"] if manager else None)
                 or f"Roster {roster_id}",
                 "manager": manager["display_name"] if manager else "",
+                "avatar": avatar_url(manager["avatar_id"]) if manager else None,
                 "record": _record(manager),
                 "points_for": manager["points_for"] if manager else 0.0,
                 "lineup_value": lineup_value,
@@ -315,6 +334,10 @@ def league_summary(conn, league_id: str) -> dict:
         "status": league["status"],
         "kind": {0: "redraft", 1: "keeper", 2: "dynasty"}.get(league["league_type"], "?"),
         "teams": league["num_teams"],
+        # Most leagues never set a custom league icon; the header falls back
+        # to the eyebrow text alone when this is None rather than reserving
+        # blank space for an image that will never arrive.
+        "avatar": avatar_url(league["avatar_id"]),
         "trades": trades,
         "weeks_scored": weeks,
         "synced_at": league["synced_at"],

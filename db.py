@@ -57,6 +57,7 @@ def init_db(conn=None):
             ppr                 REAL,      -- points per reception
             num_qbs             INTEGER,   -- 1 or 2 (superflex), drives valuation
             previous_league_id  TEXT,
+            avatar_id           TEXT,   -- Sleeper's league icon; often unset
             synced_at           TEXT
         )"""
     )
@@ -70,6 +71,9 @@ def init_db(conn=None):
             user_id      TEXT,
             display_name TEXT,
             team_name    TEXT,
+            avatar_id    TEXT,   -- Sleeper's avatar id, not a URL; the CDN
+                                 -- path is built at render time so a domain
+                                 -- change is a template edit, not a backfill
             wins         INTEGER,
             losses       INTEGER,
             ties         INTEGER,
@@ -294,6 +298,8 @@ def init_db(conn=None):
         ("player_values", "value_stddev_pct", "REAL"),
         ("player_values", "search_rank", "INTEGER"),
         ("players", "search_rank", "INTEGER"),
+        ("leagues", "avatar_id", "TEXT"),
+        ("managers", "avatar_id", "TEXT"),
     ):
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")

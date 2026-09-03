@@ -50,6 +50,21 @@
     .badge.dynasty { background: color-mix(in srgb, var(--accent) 14%, transparent);
                      color: var(--accent);
                      border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+    .title-row { display: flex; align-items: center; gap: 14px; }
+    /* Sleeper's own avatars, pulled from their CDN. object-fit guards against
+       the odd non-square upload; the border keeps a dark image from bleeding
+       into a dark page background with no edge at all. */
+    .league-avatar { width: 52px; height: 52px; border-radius: 12px;
+                     object-fit: cover; border: 1px solid var(--border);
+                     background: var(--raised); flex-shrink: 0; }
+    .avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover;
+              border: 1px solid var(--border); background: var(--raised);
+              vertical-align: middle; flex-shrink: 0; }
+    .avatar-lg { width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+                border: 1px solid var(--border); background: var(--raised);
+                flex-shrink: 0; }
+    .team-cell { display: flex; align-items: center; gap: 8px; }
+    .team-head { display: flex; align-items: center; gap: 12px; }
     h2 { font-size: 1rem; margin: 34px 0 10px; letter-spacing: 0.02em;
          text-transform: uppercase; color: var(--text-secondary); }
     .sub { color: var(--muted); font-size: .875rem; margin: 2px 0 0; }
@@ -191,8 +206,15 @@
 
   <header>
     <div>
-      <p class="eyebrow">Fantasy trade analyzer</p>
-      <h1><a href="{{ url_for('league', league_id=league_id) }}">{{ summary.name }}</a></h1>
+      <div class="title-row">
+        {% if summary.avatar %}
+          <img class="league-avatar" src="{{ summary.avatar }}" alt="" loading="lazy">
+        {% endif %}
+        <div>
+          <p class="eyebrow">Fantasy trade analyzer</p>
+          <h1><a href="{{ url_for('league', league_id=league_id) }}">{{ summary.name }}</a></h1>
+        </div>
+      </div>
       <div class="badges">
         <span class="badge {{ 'dynasty' if summary.kind == 'dynasty' }}">{{ summary.kind }}</span>
         <span class="badge">{{ summary.season }}</span>

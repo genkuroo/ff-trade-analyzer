@@ -99,7 +99,10 @@
         <tr>
           <td class="rank">{{ team.rank }}</td>
           <td>
-            <div class="team">
+            <div class="team team-cell">
+              {% if team.avatar %}
+                <img class="avatar" src="{{ team.avatar }}" alt="" loading="lazy">
+              {% endif %}
               <a href="{{ url_for('team', league_id=league_id, roster_id=team.roster_id) }}"
                  style="color:inherit">{{ team.team }}</a>
             </div>

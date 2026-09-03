@@ -15,22 +15,34 @@
   </p>
 
   <form method="get" class="card" style="padding:16px">
+    {% set mine_team = teams|selectattr('roster_id', 'equalto', mine)|first %}
+    {% set their_team = teams|selectattr('roster_id', 'equalto', theirs)|first %}
     <div class="picker" style="margin-bottom:12px">
       <div>
         <label class="slot" for="a">Your team</label>
-        <select name="a" id="a" onchange="this.form.submit()" style="width:100%">
-          {% for t in teams %}
-            <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == mine }}>{{ t.team }}</option>
-          {% endfor %}
-        </select>
+        <div class="team-cell" style="margin-top:4px">
+          {% if mine_team and mine_team.avatar %}
+            <img class="avatar" src="{{ mine_team.avatar }}" alt="" loading="lazy">
+          {% endif %}
+          <select name="a" id="a" onchange="this.form.submit()" style="width:100%">
+            {% for t in teams %}
+              <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == mine }}>{{ t.team }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
       <div>
         <label class="slot" for="b">Their team</label>
-        <select name="b" id="b" onchange="this.form.submit()" style="width:100%">
-          {% for t in teams %}
-            <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == theirs }}>{{ t.team }}</option>
-          {% endfor %}
-        </select>
+        <div class="team-cell" style="margin-top:4px">
+          {% if their_team and their_team.avatar %}
+            <img class="avatar" src="{{ their_team.avatar }}" alt="" loading="lazy">
+          {% endif %}
+          <select name="b" id="b" onchange="this.form.submit()" style="width:100%">
+            {% for t in teams %}
+              <option value="{{ t.roster_id }}" {{ 'selected' if t.roster_id == theirs }}>{{ t.team }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
     </div>
 

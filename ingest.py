@@ -156,14 +156,15 @@ def sync_league(
         """INSERT OR REPLACE INTO leagues
            (league_id, name, season, status, league_type, num_teams,
             roster_positions, playoff_week_start, trade_deadline, ppr, num_qbs,
-            previous_league_id, synced_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            previous_league_id, avatar_id, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             league_id, meta.get("name"), meta.get("season"), meta.get("status"),
             settings.get("type"), meta.get("total_rosters"),
             json.dumps(meta.get("roster_positions") or []),
             settings.get("playoff_week_start"), settings.get("trade_deadline"),
             shape["ppr"], shape["num_qbs"], meta.get("previous_league_id"),
+            meta.get("avatar"),
             dt.datetime.now().isoformat(timespec="seconds"),
         ),
     )
@@ -200,12 +201,16 @@ def _sync_managers(conn, league_id: str) -> int:
     rows = []
     for roster in sleeper.rosters(league_id):
         user = by_user.get(roster.get("owner_id")) or {}
+        metadata = user.get("metadata") or {}
         record = roster.get("settings") or {}
         rows.append(
             (
                 league_id, roster["roster_id"], roster.get("owner_id"),
                 user.get("display_name"),
-                (user.get("metadata") or {}).get("team_name") or user.get("display_name"),
+                metadata.get("team_name") or user.get("display_name"),
+                # A manager can set a custom avatar for this team specifically,
+                # separate from their personal one; that choice wins when made.
+                metadata.get("avatar") or user.get("avatar"),
                 record.get("wins"), record.get("losses"), record.get("ties"),
                 # Sleeper splits points into whole and decimal parts.
                 float(f"{record.get('fpts', 0)}.{record.get('fpts_decimal', 0)}"),
@@ -213,9 +218,9 @@ def _sync_managers(conn, league_id: str) -> int:
         )
     conn.executemany(
         """INSERT OR REPLACE INTO managers
-           (league_id, roster_id, user_id, display_name, team_name,
+           (league_id, roster_id, user_id, display_name, team_name, avatar_id,
             wins, losses, ties, points_for)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
     return len(rows)

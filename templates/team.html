@@ -3,7 +3,12 @@
 {% block title %}{{ team.team }} — {{ summary.name }}{% endblock %}
 
 {% block body %}
-  <h2>{{ team.team }}</h2>
+  <div class="team-head" style="margin-top:20px">
+    {% if team.avatar %}
+      <img class="avatar-lg" src="{{ team.avatar }}" alt="" loading="lazy">
+    {% endif %}
+    <h2 style="margin:0">{{ team.team }}</h2>
+  </div>
   <p class="sub" style="margin-bottom:12px">
     Rank {{ team.rank }} · lineup value {{ '{:,}'.format(team.lineup_value|int) }} ·
     total {{ '{:,}'.format(team.total_value|int) }} · record {{ team.record or '—' }}

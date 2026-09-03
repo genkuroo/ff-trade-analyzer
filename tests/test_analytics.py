@@ -185,3 +185,54 @@ def test_bench_delta_is_separate_from_lineup_delta(conn):
 
 
 
+
+
+# -- avatars ------------------------------------------------------------
+#
+# Only an id is ever stored; the CDN path is built at render time. One real
+# case forces the URL-passthrough branch: Sleeper lets a manager upload a
+# custom team logo, and metadata.avatar then holds a full URL rather than an
+# opaque id -- observed on the real Money Hole league, not hypothetical.
+
+
+def test_avatar_url_builds_the_thumb_path_for_a_bare_id():
+    assert analytics.avatar_url("abc123") == "https://sleepercdn.com/avatars/thumbs/abc123"
+
+
+def test_avatar_url_can_request_the_full_size():
+    assert analytics.avatar_url("abc123", size="full") == "https://sleepercdn.com/avatars/abc123"
+
+
+def test_avatar_url_passes_an_uploaded_url_through_unchanged():
+    url = "https://sleepercdn.com/uploads/2f149e379b2a66da97b9b51f5d9de1e7.jpg"
+    assert analytics.avatar_url(url) == url
+
+
+def test_avatar_url_is_none_for_no_avatar():
+    assert analytics.avatar_url(None) is None
+    assert analytics.avatar_url("") is None
+
+
+def test_power_rankings_carries_each_teams_avatar(conn):
+    conn.execute(
+        "UPDATE managers SET avatar_id = 'abc123' WHERE league_id = ? AND roster_id = 1",
+        (LEAGUE_ID,),
+    )
+    conn.commit()
+    team = next(t for t in analytics.power_rankings(conn, LEAGUE_ID) if t["roster_id"] == 1)
+    assert team["avatar"] == "https://sleepercdn.com/avatars/thumbs/abc123"
+
+
+def test_a_team_with_no_avatar_id_gets_none_not_a_broken_url(conn):
+    team = next(t for t in analytics.power_rankings(conn, LEAGUE_ID) if t["roster_id"] == 2)
+    assert team["avatar"] is None
+
+
+def test_league_summary_carries_the_league_avatar(conn):
+    conn.execute(
+        "UPDATE leagues SET avatar_id = 'league123' WHERE league_id = ?", (LEAGUE_ID,)
+    )
+    conn.commit()
+    assert analytics.league_summary(conn, LEAGUE_ID)["avatar"] == (
+        "https://sleepercdn.com/avatars/thumbs/league123"
+    )
