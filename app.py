@@ -25,6 +25,32 @@ app = Flask(__name__)
 # the next scheduled sync happens to run the migration. init_db is idempotent.
 db.init_db().close()
 
+# Which route the header's league switcher lands on, keyed by each template's
+# own `page` value. Pages scoped to one specific roster/player id (team,
+# player) have no equivalent on another league, so they fall back to that
+# league's rankings page rather than guessing at an id that means nothing there.
+_SWITCH_ENDPOINT = {
+    "rankings": "league",
+    "trades": "trades",
+    "machine": "machine",
+    "players": "players",
+    "draft": "draft",
+}
+
+
+@app.context_processor
+def inject_nav():
+    """Every page's league switcher, without every route having to fetch it."""
+    conn = db.connect()
+    leagues = analytics.all_leagues(conn)
+    conn.close()
+
+    def switch_url(page, target_league_id):
+        endpoint = _SWITCH_ENDPOINT.get(page, "league")
+        return url_for(endpoint, league_id=target_league_id)
+
+    return {"nav_leagues": leagues, "switch_url": switch_url}
+
 
 @app.route("/")
 def index():
@@ -61,7 +87,6 @@ def league(league_id):
         # the preseason rather than a table of zeroes.
         "season": analytics.season_report(conn, league_id),
         "transactions": analytics.recent_transactions(conn, league_id, limit=15),
-        "leagues": analytics.all_leagues(conn),
         "league_id": league_id,
     }
     conn.close()

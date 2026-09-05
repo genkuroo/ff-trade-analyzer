@@ -3,16 +3,6 @@
 {% block title %}{{ summary.name }}{% endblock %}
 
 {% block body %}
-  {% if leagues|length > 1 %}
-    <p class="sub" style="margin-top:10px">
-      {% for l in leagues %}
-        {% if l.league_id == league_id %}<strong>{{ l.name }}</strong>
-        {% else %}<a href="{{ url_for('league', league_id=l.league_id) }}">{{ l.name }}</a>
-        {% endif %}{% if not loop.last %} · {% endif %}
-      {% endfor %}
-    </p>
-  {% endif %}
-
   {% if season %}
     <h2>Ranked by how they have actually played</h2>
     <p class="sub" style="margin-bottom:12px">

@@ -47,6 +47,15 @@
          line-height: 1.1; }
     h1 a { color: inherit; text-decoration: none; }
     h1 a:hover { color: var(--accent); }
+    /* Styled to read as the page title first, a control second -- same size
+       and weight as the h1 it replaces once more than one league is synced. */
+    .league-select { font: inherit; font-size: 2.25rem; font-weight: 800;
+                      letter-spacing: -0.02em; line-height: 1.1; margin: 0; padding: 0 2px;
+                      background: transparent; border: none; color: var(--text-primary);
+                      cursor: pointer; max-width: 100%; }
+    .league-select:hover, .league-select:focus { color: var(--accent); outline: none; }
+    .league-select option { font-size: 1rem; font-weight: 400; color: var(--text-primary);
+                             background: var(--surface); }
     .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
     .badge { display: inline-flex; align-items: center; font-size: .75rem;
              font-weight: 600; padding: 4px 10px; border-radius: 999px;
@@ -317,7 +326,16 @@
         {% endif %}
         <div>
           <p class="eyebrow">Fantasy trade analyzer</p>
-          <h1><a href="{{ url_for('league', league_id=league_id) }}">{{ summary.name }}</a></h1>
+          {% if nav_leagues|length > 1 %}
+            <select class="league-select" onchange="location.href=this.value" aria-label="Switch league">
+              {% for l in nav_leagues %}
+                <option value="{{ switch_url(page, l.league_id) }}"
+                        {{ 'selected' if l.league_id == league_id }}>{{ l.name }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <h1><a href="{{ url_for('league', league_id=league_id) }}">{{ summary.name }}</a></h1>
+          {% endif %}
         </div>
       </div>
       <div class="badges">
